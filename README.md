@@ -1,4 +1,4 @@
-# willog-data-workreduce
+# enjoy-workreduce
 
 ## Build
 
@@ -29,4 +29,5 @@ conda activate enjoy-workreduce
 
 ```bash
 cd /opt/anaconda3/envs/enjoy-workreduce/lib/python3.10/site-packages/pyspark/jars/
+cd /opt/miniconda3/envs/enjoy-workreduce/lib/python3.10/site-packages/pyspark/jars/
 ```
