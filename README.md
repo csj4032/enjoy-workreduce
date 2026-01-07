@@ -24,6 +24,11 @@ conda create -n enjoy-workreduce python==3.10.12
 
 conda activate enjoy-workreduce
 ```
+## Requirement
+
+```bash
+pip install -r requirements.txt
+```
 
 ## Install Jars
 
