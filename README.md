@@ -36,3 +36,8 @@ pip install -r requirements.txt
 cd /opt/anaconda3/envs/enjoy-workreduce/lib/python3.10/site-packages/pyspark/jars/
 cd /opt/miniconda3/envs/enjoy-workreduce/lib/python3.10/site-packages/pyspark/jars/
 ```
+
+## Install Package
+```bash
+pip install sparkmagic emr-serverless-customauth
+```
