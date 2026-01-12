@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enjoy-workreduce"
+version = "0.0.1"
+authors = [
+    { name = "Genius", email = "csj4032@gmail.com" },
+]
+description = "MMIX Data Engineer EMR Serverless Python Package"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "duckdb==1.3.0",
+    "Faker==37.3.0",
+    "aiobotocore==2.22.0",
+    "fsspec==2025.5.1",
+    "openpyxl==3.1.5",
+    "opensearch-py==2.8.0",
+    "requests==2.32.4",
+    "requests-aws4auth==1.3.1",
+    "awscli==1.38.2",
+    "python-dateutil==2.9.0",
+    "s3fs==2025.5.1",
+    "boto3==1.37.2",
+    "botocore==1.37.2",
+    "s3transfer==0.11.3"
+]
+

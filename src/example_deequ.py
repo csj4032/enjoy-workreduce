@@ -1,4 +1,5 @@
 import argparse
+import base64 as b64
 import json
 import logging
 import random
@@ -7,10 +8,7 @@ from zoneinfo import ZoneInfo
 
 from pydeequ.analyzers import AnalysisRunner, AnalyzerContext, Completeness, Size, Uniqueness
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import lit, col, to_date, to_timestamp, base64
-from pyspark.sql.types import (
-    DateType
-)
+from pyspark.sql.functions import lit, col, to_date, to_timestamp
 from pyspark.sql.types import StructType, StructField, StringType
 
 from mmix.common.utils import data_quality_logs, generate_user_session_logs
@@ -34,7 +32,7 @@ def get_schema():
             StructField("id", StringType(), nullable=False),
             StructField("country", StringType(), nullable=False),
             StructField("language", StringType(), nullable=False),
-            StructField("installed_at", DateType(), nullable=False), ]), nullable=False),
+            StructField("installed_at", StringType(), nullable=False), ]), nullable=False),
         StructField("device", StructType([
             StructField("os", StringType(), nullable=False),
             StructField("os_version", StringType(), nullable=False),
@@ -91,7 +89,7 @@ if __name__ == "__main__":
     _args = get_args(argparse.ArgumentParser())
     _dag_id = _args.dag_id
     _run_id = _args.run_id
-    _secret = json.loads(base64.b64decode(_args.secret).decode("utf-8"))
+    _secret = json.loads(b64.b64decode(_args.secret).decode("utf-8"))
     _environment = _args.environment
     _logical_datatime = _args.logical_datatime
 

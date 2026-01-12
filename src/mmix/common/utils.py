@@ -49,7 +49,7 @@ def get_database_connection(secrets_: dict) -> MySQLConnection:
 
 
 def data_quality_logs(dataframe, secrets: dict, environment: str) -> None:
-    logging.info(f"Data Quality Logs: {len(dataframe)} environment: {environment}")
+    logging.info(f"Data Quality Logs: {dataframe} Environment: {environment}")
     connection = get_database_connection(secrets)
     columns_ = dataframe.columns
     insert_query = f"INSERT INTO data_quality_logs ({', '.join(columns_)}) VALUES ({', '.join([f'%({col_})s' for col_ in columns_])}) ON DUPLICATE KEY UPDATE value = VALUES(value)"
