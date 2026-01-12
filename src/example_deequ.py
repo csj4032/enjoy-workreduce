@@ -19,7 +19,7 @@ def get_args(parser):
     parser.add_argument('--run_id', type=str, default="", help="Run ID for tracking")
     parser.add_argument("--secret", type=str, required=False, help="base64 encoded json string")
     parser.add_argument('--environment', type=str, default="prod", help="Environment for the job (e.g., dev, stg, prod)")
-    parser.add_argument('--logical_datatime', type=str, default=datetime.now(tz=ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S%z"))
+    parser.add_argument('--logical_datetime', type=str, default=datetime.now(tz=ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S"))
     logging.info(f"Arguments: {parser.parse_args()}")
     return parser.parse_args()
 
@@ -91,11 +91,11 @@ if __name__ == "__main__":
     _run_id = _args.run_id
     _secret = json.loads(b64.b64decode(_args.secret).decode("utf-8"))
     _environment = _args.environment
-    _logical_datatime = _args.logical_datatime
+    _logical_datetime = _args.logical_datetime
 
     with (SparkSession.builder.appName("dataplatform_dashboard_international_risk_daily").getOrCreate() as _spark):
         logger.info(f"Spark session started.")
-        logger.info(f"Dag ID: {_dag_id}, Run ID: {_run_id}, Logical Datatime: {_logical_datatime}, Environment: {_environment}, Secret: {_secret}")
+        logger.info(f"Dag ID: {_dag_id}, Run ID: {_run_id}, Logical Datatime: {_logical_datetime}, Environment: {_environment}, Secret: {_secret}")
         raw_dataframe = _spark.createDataFrame(generate_user_session_logs(random.randint(100, 10000)), schema=get_schema())
         dataframe = raw_dataframe.transform(flatten_app_log)
         analysis_result = AnalysisRunner(_spark) \
@@ -109,6 +109,6 @@ if __name__ == "__main__":
             .successMetricsAsDataFrame(_spark, analysis_result) \
             .withColumn("run_name", lit(_args.dag_id)) \
             .withColumn("run_id", lit(_args.run_id)) \
-            .withColumn("logical_datetime", lit(_logical_datatime))
+            .withColumn("logical_datetime", to_timestamp(lit(_logical_datetime), "yyyy-MM-dd HH:mm:ss"))
         analyzer_context.show()
         data_quality_logs(analyzer_context, _secret, _environment)
