@@ -19,7 +19,7 @@ from mmix.common.utils import data_quality_logs, generate_user_session_logs
 def get_args(parser):
     parser.add_argument('--dag_id', type=str, default="dataplatform_dashboard_international_risk_daily", help="Dag ID for tracking")
     parser.add_argument('--run_id', type=str, default="", help="Run ID for tracking")
-    parser.add_argument("--secret", required=False, help="base64 encoded json string")
+    parser.add_argument("--secret", type=str, required=False, help="base64 encoded json string")
     parser.add_argument('--environment', type=str, default="prod", help="Environment for the job (e.g., dev, stg, prod)")
     parser.add_argument('--logical_datatime', type=str, default=datetime.now(tz=ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S%z"))
     logging.info(f"Arguments: {parser.parse_args()}")
