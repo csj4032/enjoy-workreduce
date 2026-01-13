@@ -3,6 +3,7 @@ import base64 as b64
 import json
 import logging
 from datetime import datetime
+from typing import Dict, Tuple
 from zoneinfo import ZoneInfo
 
 from pydeequ.analyzers import AnalysisRunner, AnalyzerContext, Completeness, Size, Uniqueness
@@ -11,11 +12,13 @@ from pyspark.sql.functions import lit, to_timestamp
 
 from mmix.common.utils import data_quality_logs
 
+_default_mysql_driver = "com.mysql.jdbc.Driver"
+
 
 def get_args(parser):
     parser.add_argument('--dag_id', type=str, default="dataplatform_dashboard_international_risk_daily", help="Dag ID for tracking")
     parser.add_argument('--run_id', type=str, default="", help="Run ID for tracking")
-    parser.add_argument("--mysql_primary_secret", type=str, required=False, help="base64 encoded json string")
+    parser.add_argument("--mysql_mmix_secret", type=str, required=False, help="base64 encoded json string")
     parser.add_argument("--mysql_observability_secret", type=str, required=False, help="base64 encoded json string")
     parser.add_argument('--environment', type=str, default="prod", help="Environment for the job (e.g., dev, stg, prod)")
     parser.add_argument('--logical_datetime', type=str, default=datetime.now(tz=ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S"))
@@ -23,54 +26,83 @@ def get_args(parser):
     return parser.parse_args()
 
 
+def decode_secret(b64_json: str) -> Dict:
+    return json.loads(b64.b64decode(b64_json).decode("utf-8"))
+
+
+def build_mysql_jdbc(secret: Dict) -> Tuple[str, Dict]:
+    jdbc_url_ = f"jdbc:mysql://{secret['host']}:{secret['port']}/{secret['database']}?useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=utf8"
+    jdbc_props_ = {
+        "user": secret["user"],
+        "password": secret["password"],
+        "driver": secret.get("driver", _default_mysql_driver),
+        "fetchsize": "1000",
+    }
+    return jdbc_url_, jdbc_props_
+
+
+def fetch_id_bounds(spark: SparkSession, jdbc_url_: str, jdbc_props_: Dict, table: str, id_col: str = "id") -> Tuple[int, int]:
+    bounds_df = spark.read.format("jdbc") \
+        .option("url", jdbc_url_) \
+        .options(**jdbc_props_) \
+        .option("dbtable", f"(SELECT MIN({id_col}) AS lo, MAX({id_col}) AS hi FROM {table}) t") \
+        .load()
+    row = bounds_df.first()
+    lo = int(row["lo"] or 0)
+    hi = int(row["hi"] or 0)
+    return lo, hi
+
+
+def read_jdbc_partitioned(spark: SparkSession, jdbc_url_: str, jdbc_props_: Dict, table: str, partition_col: str, lower_bound_: int, upper_bound_: int, num_partitions: int = 4):
+    return spark.read.format("jdbc") \
+        .option("url", jdbc_url_) \
+        .options(**jdbc_props_) \
+        .option("dbtable", table) \
+        .option("partitionColumn", partition_col) \
+        .option("lowerBound", lower_bound_) \
+        .option("upperBound", upper_bound_) \
+        .option("numPartitions", num_partitions) \
+        .load()
+
+
+def run_deequ_basic(spark: SparkSession, df):
+    return AnalysisRunner(spark) \
+        .onData(df) \
+        .addAnalyzer(Size()) \
+        .addAnalyzer(Uniqueness(["id"])) \
+        .addAnalyzer(Completeness("id")) \
+        .addAnalyzer(Completeness("published")) \
+        .addAnalyzer(Completeness("title")) \
+        .run()
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s - %(message)s')
     logger = logging.getLogger(__name__)
-    logging.info("Example Deequ User App Log Data Quality")
+    logger.info("Example Deequ User App Log Data Quality")
     _args = get_args(argparse.ArgumentParser())
     _dag_id = _args.dag_id
     _run_id = _args.run_id
-    _mysql_primary_secret = json.loads(b64.b64decode(_args.mysql_primary_secret).decode("utf-8"))
-    _mysql_observability_secret = json.loads(b64.b64decode(_args.mysql_observability_secret).decode("utf-8"))
     _environment = _args.environment
     _logical_datetime = _args.logical_datetime
+    _mysql_mmix_secret = decode_secret(_args.mysql_mmix_secret)
+    _mysql_observability_secret = decode_secret(_args.mysql_observability_secret)
 
-    with (SparkSession.builder.appName("dataplatform_dashboard_international_risk_daily").getOrCreate() as _spark):
-        logger.info(f"Spark session started.")
-        logger.info(f"Dag ID: {_dag_id}, Run ID: {_run_id}, Logical Datatime: {_logical_datetime}, Environment: {_environment}")
-        jdbc_url = f"jdbc:mysql://{_mysql_primary_secret['host']}:{_mysql_primary_secret['port']}/{_mysql_primary_secret['database']}?useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=utf8"
-        jdbc_props = {"user": _mysql_primary_secret["user"], "password": _mysql_primary_secret["password"], "driver": _mysql_primary_secret.get("driver", "com.mysql.cj.jdbc.Driver"), "fetchsize": "1000"}
-        bounds_dataframe = _spark.read.format("jdbc") \
-            .option("url", jdbc_url) \
-            .options(**jdbc_props) \
-            .option("dbtable", "(SELECT MIN(id) AS lo, MAX(id) AS hi FROM news_articles) t") \
-            .load()
-        row = bounds_dataframe.first()
-        lower_bound = int(row["lo"] or 0)
-        upper_bound = int(row["hi"] or 0)
-        dataframe = _spark.read.format("jdbc") \
-            .option("url", jdbc_url) \
-            .options(**jdbc_props) \
-            .option("dbtable", "news_articles") \
-            .option("partitionColumn", "id") \
-            .option("lowerBound", lower_bound) \
-            .option("upperBound", upper_bound) \
-            .option("numPartitions", 4) \
-            .load()
-        dataframe.printSchema()
-        analysis_result = AnalysisRunner(_spark) \
-            .onData(dataframe) \
-            .addAnalyzer(Size()) \
-            .addAnalyzer(Uniqueness(["id"])) \
-            .addAnalyzer(Completeness("id")) \
-            .addAnalyzer(Completeness(["published"])) \
-            .addAnalyzer(Completeness(["title"])) \
-            .run()
+    with SparkSession.builder.appName("dataplatform_dashboard_international_risk_daily").getOrCreate() as _spark:
+        logger.info("Spark session started.")
+        logger.info("Dag ID: %s, Run ID: %s, Logical Datetime: %s, Environment: %s", _dag_id, _run_id, _logical_datetime, _environment)
+        jdbc_url, jdbc_props = build_mysql_jdbc(_mysql_mmix_secret)
+        lower_bound, upper_bound = fetch_id_bounds(_spark, jdbc_url, jdbc_props, table="news_articles", id_col="id")
 
-        analyzer_context = AnalyzerContext \
-            .successMetricsAsDataFrame(_spark, analysis_result) \
-            .withColumn("run_name", lit(_args.dag_id)) \
-            .withColumn("run_id", lit(_args.run_id)) \
-            .withColumn("logical_datetime", to_timestamp(lit(_logical_datetime), "yyyy-MM-dd HH:mm:ss"))
-        analyzer_context.show()
-        data_quality_logs(analyzer_context, _mysql_observability_secret, _environment)
+        if lower_bound == 0 and upper_bound == 0:
+            logger.warning("news_articles is empty. Skip analyzers.")
+        else:
+            dataframe = read_jdbc_partitioned(_spark, jdbc_url, jdbc_props, table="news_articles", partition_col="id", lower_bound_=lower_bound, upper_bound_=upper_bound, num_partitions=4)
+            dataframe.printSchema()
+            analysis_result = run_deequ_basic(_spark, dataframe)
+            metrics_dataframe = AnalyzerContext.successMetricsAsDataFrame(_spark, analysis_result) \
+                .withColumn("run_name", lit(_dag_id)) \
+                .withColumn("run_id", lit(_run_id)) \
+                .withColumn("logical_datetime", to_timestamp(lit(_logical_datetime), "yyyy-MM-dd HH:mm:ss"))
+            metrics_dataframe.show(truncate=False)
+            data_quality_logs(metrics_dataframe, _mysql_observability_secret, _environment)
