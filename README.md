@@ -42,6 +42,13 @@ cd /opt/miniconda3/envs/enjoy-workreduce/lib/python3.10/site-packages/pyspark/ja
 pip install sparkmagic emr-serverless-customauth
 ```
 
+## S3 Copy Local to S3
+
+```bash
+aws s3 cp ./src s3://mmix-prod-dataengineer-workreduce/src --recursive --profile mmix-genius
+aws s3 cp ./dist s3://mmix-prod-dataengineer-workreduce/dist --recursive --profile mmix-genius
+```
+
 ## S3 Copy Local to S3 (Minio)
 
 ```bash
