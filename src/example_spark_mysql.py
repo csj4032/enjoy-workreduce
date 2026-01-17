@@ -66,7 +66,7 @@ def read_jdbc_partitioned(spark: SparkSession, jdbc_url_: str, jdbc_props_: Dict
         .load()
 
 
-def run_deequ_analysis(spark: SparkSession, dataframe_:DataFrame) -> DataFrame:
+def run_deequ_analysis(spark: SparkSession, dataframe_: DataFrame):
     return AnalysisRunner(spark) \
         .onData(dataframe_) \
         .addAnalyzer(Size()) \
