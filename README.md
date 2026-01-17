@@ -1,56 +1,496 @@
 # enjoy-workreduce
 
-## Build
+MMIX Data Engineering을 위한 AWS EMR Serverless Python 패키지입니다. PySpark 기반의 데이터 처리와 PyDeequ를 활용한 데이터 품질 검증 기능을 제공합니다.
 
-To build the project, run the following command:
+## 프로젝트 개요
 
-### Initial Setup
+이 프로젝트는 다음과 같은 기능을 제공합니다:
+
+- **데이터 품질 검증**: PyDeequ를 사용한 데이터 완전성, 고유성, 규칙 준수 검사
+- **AWS 통합**: S3, Secrets Manager, MySQL, OpenSearch와의 연동
+- **테스트 데이터 생성**: Faker를 활용한 한국어 로케일 기반 합성 데이터 생성
+- **대용량 처리**: PySpark 기반 분산 데이터 처리 및 파티셔닝
+- **스트리밍 처리**: Kafka 연동 및 Avro 스키마 지원
+
+## 환경 설정
+
+### 1. Conda 환경 생성
+
+Python 3.10.12 기반의 conda 환경을 생성하고 활성화합니다.
+
+```bash
+conda create -n enjoy-workreduce python==3.10.12
+conda activate enjoy-workreduce
+```
+
+### 2. 의존성 설치
+
+필요한 패키지들을 설치합니다.
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. 추가 패키지 설치 (선택사항)
+
+Jupyter 환경에서 작업하거나 EMR Serverless 인증이 필요한 경우:
+
+```bash
+pip install sparkmagic emr-serverless-customauth
+```
+
+### 4. PySpark JAR 파일 경로
+
+사용자 정의 JAR 파일이 필요한 경우, 다음 경로에 추가합니다:
+
+```bash
+# Anaconda 사용 시
+cd /opt/anaconda3/envs/enjoy-workreduce/lib/python3.10/site-packages/pyspark/jars/
+
+# Miniconda 사용 시
+cd /opt/miniconda3/envs/enjoy-workreduce/lib/python3.10/site-packages/pyspark/jars/
+```
+
+## 패키지 빌드
+
+### 초기 설정
+
+빌드 도구를 설치합니다.
 
 ```bash
 pip install build
 pip install --upgrade --force-reinstall setuptools
 ```
 
-### Build the Package
+### 패키지 빌드
+
+프로젝트를 빌드하면 `dist/` 디렉토리에 배포 가능한 wheel 파일이 생성됩니다.
 
 ```bash
 python -m build
 ```
 
-## Conda Environment
+빌드 결과:
+- `dist/enjoy_workreduce-0.0.1-py3-none-any.whl`
+- `dist/enjoy-workreduce-0.0.1.tar.gz`
+
+## 예제 스크립트
+
+### example_spark_deequ.py
+
+**목적**: Faker로 생성한 합성 사용자 앱 로그 데이터에 대해 PyDeequ 데이터 품질 분석을 수행합니다.
+
+#### 주요 기능
+
+1. **합성 데이터 생성**
+   - `generate_user_session_logs()` 함수로 사용자 세션 로그 생성
+   - 한국어 로케일 기반의 현실적인 테스트 데이터
+   - 중첩된 JSON 스키마 구조:
+     - User: user_id
+     - Session: session_id
+     - Install: id, country, language, installed_at
+     - Device: os, os_version, type, model
+     - App: version
+     - Network: ip, carrier
+     - Event: timestamp, type, menu, action, content, referrer
+
+2. **데이터 변환**
+   - `flatten_app_log()`: 중첩 구조를 평탄화하여 분석 가능한 테이블 형태로 변환
+   - Timestamp 및 Date 타입 변환
+
+3. **PyDeequ 분석기 적용**
+   - **Size**: 전체 레코드 수
+   - **Completeness**: 필수 컬럼의 완전성 (user_id, session_id, install_id, device_os 등)
+   - **Uniqueness**: 고유성 검사 (session_id 단독, session_id + event_ts 조합)
+   - **Distinctness**: session_id의 고유값 비율
+   - **ApproxCountDistinct**: user_id의 근사 고유값 개수
+   - **Histogram**: 분포 분석 (install_country, event_type, event_menu)
+   - **Entropy**: event_type의 엔트로피
+   - **Compliance**: 규칙 준수 검사
+     - IPv4 주소 형식 유효성 검증
+     - SemVer 버전 형식 유효성 검증 (app_version)
+     - 이벤트 시간이 설치 시간 이후인지 검증
+
+4. **결과 저장**
+   - 분석 메트릭을 MySQL 데이터베이스에 저장
+   - `run_name`, `run_id`, `logical_datetime`으로 실행 이력 추적
+
+#### 실행 방법
 
 ```bash
-conda create -n enjoy-workreduce python==3.10.12
-
-conda activate enjoy-workreduce
+spark-submit \
+  --py-files dist/enjoy_workreduce-0.0.1-py3-none-any.whl \
+  src/example_spark_deequ.py \
+  --dag_id "dataplatform_dashboard_international_risk_daily" \
+  --run_id "manual_run_001" \
+  --secret "$(echo '{"host":"mysql-host.com","port":3306,"user":"admin","password":"pass","database":"observability"}' | base64)" \
+  --environment "prod" \
+  --logical_datetime "2026-01-17 12:00:00"
 ```
-## Requirement
 
-```bash
-pip install -r requirements.txt
+#### 파라미터 설명
+
+| 파라미터 | 필수 여부 | 기본값 | 설명 |
+|---------|----------|--------|------|
+| `--dag_id` | 선택 | `dataplatform_dashboard_international_risk_daily` | Airflow DAG ID (추적용) |
+| `--run_id` | 선택 | `""` | 실행 ID (추적용) |
+| `--secret` | 선택 | - | Base64 인코딩된 MySQL 접속 정보 (JSON) |
+| `--environment` | 선택 | `prod` | 환경 구분 (dev/stg/prod) |
+| `--logical_datetime` | 선택 | 현재 UTC 시간 | 논리적 실행 시간 |
+
+#### Secret JSON 형식
+
+```json
+{
+  "host": "mysql-host.example.com",
+  "port": 3306,
+  "user": "username",
+  "password": "password",
+  "database": "observability"
+}
 ```
 
-## Install Jars
-
+Base64 인코딩 방법:
 ```bash
-cd /opt/anaconda3/envs/enjoy-workreduce/lib/python3.10/site-packages/pyspark/jars/
-cd /opt/miniconda3/envs/enjoy-workreduce/lib/python3.10/site-packages/pyspark/jars/
+echo '{"host":"mysql-host.com","port":3306,"user":"admin","password":"pass","database":"observability"}' | base64
 ```
 
-## Install Package
+---
+
+### example_spark_mysql.py
+
+**목적**: MySQL 데이터베이스의 `news_articles` 테이블에서 데이터를 읽어와 PyDeequ 데이터 품질 검증을 수행합니다.
+
+#### 주요 기능
+
+1. **JDBC 연결 설정**
+   - `build_mysql_jdbc()`: MySQL JDBC URL 및 연결 속성 생성
+   - 설정 포함: SSL 비활성화, UTC 타임존, UTF-8 인코딩
+   - 커스텀 JDBC 드라이버 지원
+
+2. **동적 파티셔닝 전략**
+   - `fetch_id_bounds()`: 테이블의 MIN/MAX ID를 조회하여 범위 확인
+   - `read_jdbc_partitioned()`: ID 범위 기반으로 데이터를 파티션으로 나누어 병렬 읽기
+   - `numPartitions` 파라미터로 병렬 처리 수준 조정 (기본값: 4)
+   - 대용량 테이블 처리 최적화
+
+3. **PyDeequ 분석기 적용**
+   - **Size**: 전체 레코드 수
+   - **Uniqueness**: id 컬럼의 고유성 검사
+   - **Completeness**: 필수 컬럼 완전성 검사 (id, published, title)
+
+4. **결과 저장**
+   - 분석 메트릭을 별도의 관찰성(observability) MySQL 데이터베이스에 저장
+   - 실행 이력 추적 (run_name, run_id, logical_datetime)
+   - 소스 DB와 메트릭 저장 DB 분리
+
+#### 실행 방법
+
 ```bash
-pip install sparkmagic emr-serverless-customauth
+spark-submit \
+  --jars /path/to/mysql-connector-java.jar \
+  --py-files dist/enjoy_workreduce-0.0.1-py3-none-any.whl \
+  src/example_spark_mysql.py \
+  --dag_id "dataplatform_dashboard_international_risk_daily" \
+  --run_id "manual_run_001" \
+  --mysql_mmix_secret "$(echo '{"host":"source-db.com","port":3306,"user":"admin","password":"pass","database":"mmix"}' | base64)" \
+  --mysql_observability_secret "$(echo '{"host":"metrics-db.com","port":3306,"user":"admin","password":"pass","database":"observability"}' | base64)" \
+  --environment "prod" \
+  --logical_datetime "2026-01-17 12:00:00"
 ```
 
-## S3 Copy Local to S3
+#### 파라미터 설명
+
+| 파라미터 | 필수 여부 | 기본값 | 설명 |
+|---------|----------|--------|------|
+| `--dag_id` | 선택 | `dataplatform_dashboard_international_risk_daily` | Airflow DAG ID (추적용) |
+| `--run_id` | 선택 | `""` | 실행 ID (추적용) |
+| `--mysql_mmix_secret` | 선택 | - | Base64 인코딩된 소스 MySQL 접속 정보 |
+| `--mysql_observability_secret` | 선택 | - | Base64 인코딩된 메트릭 저장 MySQL 접속 정보 |
+| `--environment` | 선택 | `prod` | 환경 구분 (dev/stg/prod) |
+| `--logical_datetime` | 선택 | 현재 UTC 시간 | 논리적 실행 시간 |
+
+#### Secret JSON 형식
+
+```json
+{
+  "host": "mysql-host.example.com",
+  "port": 3306,
+  "user": "username",
+  "password": "password",
+  "database": "database_name",
+  "driver": "com.mysql.jdbc.Driver"
+}
+```
+
+#### 특징 및 주의사항
+
+- **빈 테이블 처리**: 레코드가 없을 경우 분석을 건너뛰고 경고 로그 출력
+- **파티션 조정**: `numPartitions` 값을 조정하여 병렬 처리 수준 제어 가능
+- **두 DB 분리**: 소스 데이터베이스와 메트릭 저장 데이터베이스를 분리하여 운영
+- **JDBC JAR 필요**: MySQL JDBC 드라이버 JAR 파일을 `--jars` 옵션으로 지정 필요
+
+---
+
+## 공통 유틸리티 (mmix.common.utils)
+
+`mmix.common.utils` 모듈은 자주 사용되는 유틸리티 함수들을 제공합니다.
+
+### 1. AWS Secrets Manager 연동
+
+AWS Secrets Manager에서 비밀 정보를 조회합니다.
+
+```python
+from mmix.common.utils import get_secret_value
+
+# Secrets Manager에서 비밀 정보 가져오기
+secrets = get_secret_value("my-secret-name", region_name="ap-northeast-2")
+print(secrets)  # {'host': '...', 'port': 3306, ...}
+```
+
+### 2. S3 경로 생성 및 검증
+
+시간 기반 S3 경로를 생성하고 실제로 존재하는 경로만 필터링합니다.
+
+```python
+import boto3
+from datetime import datetime
+from mmix.common.utils import get_s3_paths, filter_valid_s3_paths
+
+# 최근 24시간의 S3 경로 생성 (시간별 파티션)
+prefix = "s3://my-bucket/logs"
+paths = get_s3_paths(prefix, s3_window_hours=24, to_datatime=datetime.now())
+# 결과: ['s3://my-bucket/logs/year=2026/month=01/day=17/hour=12', ...]
+
+# 실제로 데이터가 있는 경로만 필터링
+s3_client = boto3.client('s3')
+valid_paths = filter_valid_s3_paths(s3_client, "my-bucket", paths)
+# 결과: 실제 .json 파일이 존재하는 경로만 반환
+```
+
+### 3. 테스트 데이터 생성
+
+한국어 로케일 기반의 현실적인 사용자 세션 로그 데이터를 생성합니다.
+
+```python
+from mmix.common.utils import generate_user_session_logs
+
+# 100개의 합성 사용자 세션 로그 생성
+logs = generate_user_session_logs(log_count=100)
+
+# 각 로그는 다음 정보를 포함:
+# - user_id, session_id
+# - install 정보 (country, language, installed_at)
+# - device 정보 (os, os_version, model)
+# - app 정보 (version)
+# - network 정보 (ip, carrier)
+# - event 정보 (timestamp, type, menu, action, content, referrer)
+```
+
+생성되는 데이터의 특징:
+- 국가: KR, US, JP, SG, DE
+- OS: Android (11-14), iOS (15.0-17.0)
+- 앱 버전: 1.0.0, 1.1.0, 1.2.0, 2.0.0
+- 메뉴: home, search, book, mypage
+- 이벤트: 클릭, 조회, 검색 등
+
+### 4. 데이터 품질 로깅
+
+PyDeequ 분석 결과를 MySQL 데이터베이스에 저장합니다.
+
+```python
+from pyspark.sql import SparkSession
+from pydeequ.analyzers import AnalysisRunner, AnalyzerContext, Size, Completeness
+from mmix.common.utils import data_quality_logs
+
+spark = SparkSession.builder.getOrCreate()
+df = spark.read.parquet("s3://bucket/data/")
+
+# PyDeequ 분석 실행
+analysis_result = AnalysisRunner(spark) \
+    .onData(df) \
+    .addAnalyzer(Size()) \
+    .addAnalyzer(Completeness("user_id")) \
+    .run()
+
+# 메트릭을 DataFrame으로 변환
+metrics_df = AnalyzerContext.successMetricsAsDataFrame(spark, analysis_result)
+
+# MySQL에 저장 (ON DUPLICATE KEY UPDATE 사용)
+mysql_secrets = {
+    "host": "mysql-host.com",
+    "port": 3306,
+    "user": "admin",
+    "password": "password",
+    "database": "observability"
+}
+data_quality_logs(metrics_df, mysql_secrets, environment="prod")
+```
+
+### 5. MySQL 연결
+
+MySQL 데이터베이스 연결을 생성합니다.
+
+```python
+from mmix.common.utils import get_database_connection
+
+secrets = {
+    "host": "mysql-host.com",
+    "port": 3306,
+    "user": "admin",
+    "password": "password",
+    "database": "mydb"
+}
+
+connection = get_database_connection(secrets)
+cursor = connection.cursor()
+cursor.execute("SELECT * FROM my_table LIMIT 10")
+results = cursor.fetchall()
+connection.close()
+```
+
+## Jupyter Notebooks
+
+프로젝트에는 다양한 환경에서 실행 가능한 Jupyter 노트북 예제가 포함되어 있습니다.
+
+### notebooks/docker/
+로컬 Docker 환경에서 실행 가능한 예제:
+- `example_connection.ipynb`: 연결 테스트
+- `example_deequ.ipynb`: PyDeequ 데이터 품질 검증
+- `example_elasticsearch.ipynb`: Elasticsearch 연동
+- `example_mysql.ipynb`: MySQL 연동
+- `example_s3.ipynb`: S3 데이터 읽기/쓰기
+- `example_spark.ipynb`: PySpark 기본 사용법
+
+### notebooks/emr/
+AWS EMR Serverless 환경에서 실행 가능한 예제:
+- `example_deequ.ipynb`: EMR에서 PyDeequ 실행
+- `example_s3.ipynb`: EMR에서 S3 데이터 처리
+
+### notebooks/host/
+로컬 호스트 환경에서 실행 가능한 예제:
+- `example_kafka.ipynb`: Kafka 스트리밍 처리
+- `example_kafka_avro.ipynb`: Kafka + Avro 스키마 처리
+
+## AWS 배포
+
+### S3에 배포 (Production AWS)
+
+소스 코드와 빌드된 패키지를 S3에 업로드합니다.
 
 ```bash
+# 소스 코드 업로드
 aws s3 cp ./src s3://mmix-prod-dataengineer-workreduce/src --recursive --profile mmix-genius
+
+# 빌드된 패키지 업로드
 aws s3 cp ./dist s3://mmix-prod-dataengineer-workreduce/dist --recursive --profile mmix-genius
 ```
 
-## S3 Copy Local to S3 (Minio)
+### S3에 배포 (Local Minio)
+
+로컬 Minio 환경에 배포하는 경우:
 
 ```bash
-aws s3 cp ./src s3://mmix-prod-dataengineer-workreduce/src --recursive --endpoint-url http://minio:9000 --profile minio
+aws s3 cp ./src s3://mmix-prod-dataengineer-workreduce/src \
+  --recursive \
+  --endpoint-url http://minio:9000 \
+  --profile minio
 ```
+
+## 테스트
+
+### 기본 테스트 실행
+
+```bash
+pytest
+```
+
+### 커스텀 OpenSearch 호스트로 테스트
+
+```bash
+pytest --host=custom-opensearch-host.com --port=443
+```
+
+### 특정 테스트 파일 실행
+
+```bash
+pytest tests/test_specific.py -v
+```
+
+### 로그 레벨 조정
+
+`pytest.ini` 파일에서 로그 레벨이 INFO로 설정되어 있습니다. 필요에 따라 DEBUG로 변경할 수 있습니다.
+
+## 주요 의존성
+
+| 패키지 | 버전 | 용도 |
+|--------|------|------|
+| pyspark | - | 분산 데이터 처리 프레임워크 |
+| pydeequ | 1.5.0 | 데이터 품질 검증 (Amazon Deequ 기반) |
+| boto3 | 1.37.2 | AWS SDK (S3, Secrets Manager) |
+| Faker | 40.1.0 | 합성 테스트 데이터 생성 |
+| confluent-kafka | 2.12.2 | Kafka 스트리밍 처리 |
+| mysql-connector-python | 9.3.0 | MySQL 데이터베이스 연결 |
+| elasticsearch | 8.19.2 | Elasticsearch 연동 |
+| duckdb | 1.3.0 | 임베디드 분석 데이터베이스 |
+| pandas | 2.1.4 | 데이터 분석 및 처리 |
+| numpy | 1.26.4 | 수치 계산 |
+
+## 프로젝트 구조
+
+```
+enjoy-workreduce/
+├── src/
+│   ├── mmix/
+│   │   ├── __init__.py
+│   │   └── common/
+│   │       ├── __init__.py
+│   │       └── utils.py              # 공통 유틸리티 함수
+│   ├── example_spark_deequ.py        # PyDeequ 합성 데이터 예제
+│   └── example_spark_mysql.py        # MySQL 연동 PyDeequ 예제
+├── notebooks/
+│   ├── docker/                       # Docker 환경 예제
+│   ├── emr/                         # EMR 환경 예제
+│   └── host/                        # 로컬 호스트 예제
+├── tests/                           # 테스트 코드
+├── dist/                            # 빌드 결과물
+├── pyproject.toml                   # 프로젝트 메타데이터
+├── requirements.txt                 # Python 의존성
+├── pytest.ini                       # pytest 설정
+├── conftest.py                      # pytest fixtures
+└── README.md                        # 이 파일
+```
+
+## 문제 해결
+
+### Spark 세션이 시작되지 않는 경우
+
+1. Java가 설치되어 있는지 확인:
+   ```bash
+   java -version
+   ```
+
+2. JAVA_HOME 환경 변수 설정:
+   ```bash
+   export JAVA_HOME=/path/to/java
+   ```
+
+### MySQL JDBC 연결 오류
+
+1. JDBC 드라이버 JAR 파일 경로 확인
+2. `--jars` 옵션에 올바른 경로 지정
+3. MySQL 호스트 및 포트 접근 가능 여부 확인
+
+### PyDeequ 분석 실패
+
+1. PySpark 버전과 PyDeequ 버전 호환성 확인
+2. Deequ JAR 파일이 PySpark jars 디렉토리에 있는지 확인
+3. Spark 세션 생성 시 메모리 설정 확인
+
+## 라이선스
+
+MIT License
+
+## 기여자
+
+- Genius (csj4032@gmail.com)

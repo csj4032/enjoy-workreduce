@@ -6,7 +6,7 @@ import random
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from pydeequ.analyzers import AnalysisRunner, AnalyzerContext, Completeness, Size, Uniqueness
+from pydeequ.analyzers import AnalysisRunner, AnalyzerContext, Size, Completeness, Uniqueness, Distinctness, ApproxCountDistinct, Compliance, Histogram, Entropy
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import lit, col, to_date, to_timestamp
 from pyspark.sql.types import StructType, StructField, StringType
@@ -96,13 +96,33 @@ if __name__ == "__main__":
     with (SparkSession.builder.appName("dataplatform_dashboard_international_risk_daily").getOrCreate() as _spark):
         logger.info(f"Spark session started.")
         logger.info(f"Dag ID: {_dag_id}, Run ID: {_run_id}, Logical Datatime: {_logical_datetime}, Environment: {_environment}, Secret: {_secret}")
-        raw_dataframe = _spark.createDataFrame(generate_user_session_logs(random.randint(100, 10000)), schema=get_schema())
+        raw_dataframe = _spark.createDataFrame(generate_user_session_logs(random.randint(100, 15000)), schema=get_schema())
         dataframe = raw_dataframe.transform(flatten_app_log)
         analysis_result = AnalysisRunner(_spark) \
             .onData(dataframe) \
             .addAnalyzer(Size()) \
             .addAnalyzer(Completeness("user_id")) \
+            .addAnalyzer(Completeness("session_id")) \
+            .addAnalyzer(Completeness("install_id")) \
+            .addAnalyzer(Completeness("install_country")) \
+            .addAnalyzer(Completeness("install_language")) \
+            .addAnalyzer(Completeness("device_os")) \
+            .addAnalyzer(Completeness("app_version")) \
+            .addAnalyzer(Completeness("event_ts")) \
+            .addAnalyzer(Completeness("event_type")) \
+            .addAnalyzer(Completeness("event_action")) \
             .addAnalyzer(Uniqueness(["session_id"])) \
+            .addAnalyzer(Distinctness("session_id")) \
+            .addAnalyzer(ApproxCountDistinct("user_id")) \
+            .addAnalyzer(Uniqueness(["session_id"])) \
+            .addAnalyzer(Uniqueness(["session_id", "event_ts"])) \
+            .addAnalyzer(Histogram("install_country")) \
+            .addAnalyzer(Histogram("event_type")) \
+            .addAnalyzer(Histogram("event_menu")) \
+            .addAnalyzer(Entropy("event_type")) \
+            .addAnalyzer(Compliance("valid_ipv4", r"network_ip RLIKE '^(\\d{1,3}\\.){3}\\d{1,3}$'")) \
+            .addAnalyzer(Compliance("valid_semver", r"app_version RLIKE '^\\d+\\.\\d+\\.\\d+$'")) \
+            .addAnalyzer(Compliance("event_after_install", "event_ts IS NOT NULL AND install_installed_at IS NOT NULL AND event_ts >= install_installed_at")) \
             .run()
 
         analyzer_context = AnalyzerContext \
