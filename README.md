@@ -174,12 +174,20 @@ echo '{"host":"mysql-host.com","port":3306,"user":"admin","password":"pass","dat
    - `numPartitions` 파라미터로 병렬 처리 수준 조정 (기본값: 4)
    - 대용량 테이블 처리 최적화
 
-3. **PyDeequ 분석기 적용**
+3. **데이터 전처리**
+   - 문자열 길이 컬럼 생성: `title_len`, `summary_len`, `description_len`
+   - PySpark의 `F.length()` 함수로 각 텍스트 필드의 길이 계산
+
+4. **PyDeequ 분석기 적용**
    - **Size**: 전체 레코드 수
    - **Uniqueness**: id 컬럼의 고유성 검사
-   - **Completeness**: 필수 컬럼 완전성 검사 (id, published, title)
+   - **Completeness**: 필수 컬럼 완전성 검사 (id, published, title, summary, description)
+   - **ApproxCountDistinct**: 고유값 근사 개수 (link, title)
+   - **Distinctness**: 고유값 비율 (subject, keyword)
+   - **Entropy**: 엔트로피 분석 (subject, keyword)
+   - **Mean, Minimum, Maximum**: 텍스트 길이 통계 (title_len, summary_len, description_len)
 
-4. **결과 저장**
+5. **결과 저장**
    - 분석 메트릭을 별도의 관찰성(observability) MySQL 데이터베이스에 저장
    - 실행 이력 추적 (run_name, run_id, logical_datetime)
    - 소스 DB와 메트릭 저장 DB 분리
@@ -223,12 +231,26 @@ spark-submit \
 }
 ```
 
+#### 분석 대상 테이블 구조
+
+`news_articles` 테이블:
+- **id**: 기본 키
+- **link**: 뉴스 기사 링크
+- **title**: 제목
+- **published**: 발행일
+- **summary**: 요약
+- **description**: 본문
+- **subject**: 주제 분류
+- **keyword**: 키워드
+
 #### 특징 및 주의사항
 
 - **빈 테이블 처리**: 레코드가 없을 경우 분석을 건너뛰고 경고 로그 출력
 - **파티션 조정**: `numPartitions` 값을 조정하여 병렬 처리 수준 제어 가능
 - **두 DB 분리**: 소스 데이터베이스와 메트릭 저장 데이터베이스를 분리하여 운영
 - **JDBC JAR 필요**: MySQL JDBC 드라이버 JAR 파일을 `--jars` 옵션으로 지정 필요
+- **텍스트 길이 분석**: title, summary, description의 길이를 계산하여 통계 분석 수행
+- **엔트로피 분석**: subject와 keyword의 분포 엔트로피를 계산하여 데이터 다양성 측정
 
 ---
 

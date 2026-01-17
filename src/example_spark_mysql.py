@@ -3,11 +3,12 @@ import base64 as b64
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Any
 from zoneinfo import ZoneInfo
+from pyspark.sql import functions as F
 
-from pydeequ.analyzers import AnalysisRunner, AnalyzerContext, Completeness, Size, Uniqueness
-from pyspark.sql import SparkSession
+from pydeequ.analyzers import AnalyzerContext, AnalysisRunner, Size, Uniqueness, Completeness, ApproxCountDistinct, Mean, Minimum, Maximum, Distinctness, Entropy
+from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import lit, to_timestamp
 
 from mmix.common.utils import data_quality_logs
@@ -53,7 +54,7 @@ def fetch_id_bounds(spark: SparkSession, jdbc_url_: str, jdbc_props_: Dict, tabl
     return lo, hi
 
 
-def read_jdbc_partitioned(spark: SparkSession, jdbc_url_: str, jdbc_props_: Dict, table: str, partition_col: str, lower_bound_: int, upper_bound_: int, num_partitions: int = 4):
+def read_jdbc_partitioned(spark: SparkSession, jdbc_url_: str, jdbc_props_: Dict, table: str, partition_col: str, lower_bound_: int, upper_bound_: int, num_partitions: int = 4) -> DataFrame:
     return spark.read.format("jdbc") \
         .option("url", jdbc_url_) \
         .options(**jdbc_props_) \
@@ -65,14 +66,31 @@ def read_jdbc_partitioned(spark: SparkSession, jdbc_url_: str, jdbc_props_: Dict
         .load()
 
 
-def run_deequ_basic(spark: SparkSession, df):
+def run_deequ_analysis(spark: SparkSession, dataframe_:DataFrame) -> DataFrame:
     return AnalysisRunner(spark) \
-        .onData(df) \
+        .onData(dataframe_) \
         .addAnalyzer(Size()) \
         .addAnalyzer(Uniqueness(["id"])) \
         .addAnalyzer(Completeness("id")) \
+        .addAnalyzer(ApproxCountDistinct("link")) \
+        .addAnalyzer(ApproxCountDistinct("title")) \
         .addAnalyzer(Completeness("published")) \
         .addAnalyzer(Completeness("title")) \
+        .addAnalyzer(Completeness("summary")) \
+        .addAnalyzer(Completeness("description")) \
+        .addAnalyzer(Distinctness("subject")) \
+        .addAnalyzer(Entropy("subject")) \
+        .addAnalyzer(Distinctness("keyword")) \
+        .addAnalyzer(Entropy("keyword")) \
+        .addAnalyzer(Mean("title_len")) \
+        .addAnalyzer(Minimum("title_len")) \
+        .addAnalyzer(Maximum("title_len")) \
+        .addAnalyzer(Mean("summary_len")) \
+        .addAnalyzer(Minimum("summary_len")) \
+        .addAnalyzer(Maximum("summary_len")) \
+        .addAnalyzer(Mean("description_len")) \
+        .addAnalyzer(Minimum("description_len")) \
+        .addAnalyzer(Maximum("description_len")) \
         .run()
 
 
@@ -97,9 +115,13 @@ if __name__ == "__main__":
         if lower_bound == 0 and upper_bound == 0:
             logger.warning("news_articles is empty. Skip analyzers.")
         else:
-            dataframe = read_jdbc_partitioned(_spark, jdbc_url, jdbc_props, table="news_articles", partition_col="id", lower_bound_=lower_bound, upper_bound_=upper_bound, num_partitions=4)
+            dataframe = read_jdbc_partitioned(_spark, jdbc_url, jdbc_props, table="news_articles", partition_col="id", lower_bound_=lower_bound, upper_bound_=upper_bound, num_partitions=4) \
+                .withColumn("title_len", F.length(F.col("title"))) \
+                .withColumn("summary_len", F.length(F.col("summary"))) \
+                .withColumn("description_len", F.length(F.col("description")))
             dataframe.printSchema()
-            analysis_result = run_deequ_basic(_spark, dataframe)
+            analysis_result = run_deequ_analysis(_spark, dataframe)
+            logger.info(f"Analysis result: {analysis_result}")
             metrics_dataframe = AnalyzerContext.successMetricsAsDataFrame(_spark, analysis_result) \
                 .withColumn("run_name", lit(_dag_id)) \
                 .withColumn("run_id", lit(_run_id)) \
