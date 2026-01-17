@@ -114,7 +114,6 @@ if __name__ == "__main__":
             .addAnalyzer(Uniqueness(["session_id"])) \
             .addAnalyzer(Distinctness("session_id")) \
             .addAnalyzer(ApproxCountDistinct("user_id")) \
-            .addAnalyzer(Uniqueness(["session_id"])) \
             .addAnalyzer(Uniqueness(["session_id", "event_ts"])) \
             .addAnalyzer(Histogram("install_country")) \
             .addAnalyzer(Histogram("event_type")) \
