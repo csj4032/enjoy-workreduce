@@ -2,6 +2,37 @@
 
 MMIX Data Engineering을 위한 AWS EMR Serverless Python 패키지입니다. PySpark 기반의 데이터 처리와 PyDeequ를 활용한 데이터 품질 검증 기능을 제공합니다.
 
+## 최근 변경사항 (2026-01-17)
+
+### 신규 기능
+
+1. **Apache Flink 지원 추가**
+   - PyFlink 1.20.3 라이브러리 추가
+   - `example_flink.ipynb`: Kafka CDC 기반 실시간 스트리밍 처리 예제
+   - Flink JobManager와의 연동 및 체크포인팅 설정 포함
+
+2. **Apache Iceberg 지원 추가**
+   - `example_iceberg.ipynb`: Apache Iceberg 테이블 포맷 처리 예제
+   - 데이터 레이크하우스 아키텍처 지원
+
+3. **데이터 품질 분석 강화**
+   - `example_spark_mysql.py`에 추가 PyDeequ Analyzer 구현:
+     - `Completeness`: 필수 컬럼 완전성 검사 (id, published, title, summary, description)
+     - `Distinctness`: 고유값 비율 측정 (subject, keyword)
+     - `Entropy`: 데이터 분포 엔트로피 분석 (subject, keyword)
+   - 텍스트 길이 통계 분석 (Mean, Min, Max)
+
+### 개선사항
+
+1. **Notebook 코드 정리**
+   - `example_elasticsearch.ipynb`: 불필요한 주석 제거 및 실행 타임스탬프 업데이트
+   - `example_s3.ipynb`: Spark 세션 초기화 로직 리팩토링 및 가독성 개선
+   - `example_kafka.ipynb`: 코드 구조 개선 및 주석 업데이트
+
+2. **코드 리팩토링**
+   - `example_spark_mysql.py`: 함수 시그니처 개선 및 로깅 강화
+   - `example_spark_deequ.py`: 중복 analyzer 제거 (session_id uniqueness)
+
 ## 프로젝트 개요
 
 이 프로젝트는 다음과 같은 기능을 제공합니다:
@@ -11,6 +42,8 @@ MMIX Data Engineering을 위한 AWS EMR Serverless Python 패키지입니다. Py
 - **테스트 데이터 생성**: Faker를 활용한 한국어 로케일 기반 합성 데이터 생성
 - **대용량 처리**: PySpark 기반 분산 데이터 처리 및 파티셔닝
 - **스트리밍 처리**: Kafka 연동 및 Avro 스키마 지원
+- **실시간 스트리밍**: Apache Flink를 활용한 실시간 데이터 스트리밍 처리
+- **데이터 레이크하우스**: Apache Iceberg 테이블 포맷 지원
 
 ## 환경 설정
 
@@ -380,6 +413,8 @@ connection.close()
 - `example_connection.ipynb`: 연결 테스트
 - `example_deequ.ipynb`: PyDeequ 데이터 품질 검증
 - `example_elasticsearch.ipynb`: Elasticsearch 연동
+- `example_flink.ipynb`: Apache Flink 스트리밍 처리 (Kafka CDC)
+- `example_iceberg.ipynb`: Apache Iceberg 테이블 포맷 처리
 - `example_mysql.ipynb`: MySQL 연동
 - `example_s3.ipynb`: S3 데이터 읽기/쓰기
 - `example_spark.ipynb`: PySpark 기본 사용법
@@ -449,6 +484,7 @@ pytest tests/test_specific.py -v
 | boto3 | 1.37.2 | AWS SDK (S3, Secrets Manager) |
 | Faker | 40.1.0 | 합성 테스트 데이터 생성 |
 | confluent-kafka | 2.12.2 | Kafka 스트리밍 처리 |
+| apache-flink | 1.20.3 | 실시간 스트리밍 데이터 처리 |
 | mysql-connector-python | 9.3.0 | MySQL 데이터베이스 연결 |
 | elasticsearch | 8.19.2 | Elasticsearch 연동 |
 | duckdb | 1.3.0 | 임베디드 분석 데이터베이스 |
