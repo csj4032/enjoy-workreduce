@@ -542,6 +542,92 @@ enjoy-workreduce/
 2. Deequ JAR 파일이 PySpark jars 디렉토리에 있는지 확인
 3. Spark 세션 생성 시 메모리 설정 확인
 
+### Great Expectations CLI 실행 오류
+
+Great Expectations 패키지는 설치되어 있지만 CLI 실행 파일이 PATH에 없는 경우 발생합니다.
+
+#### 현상
+
+```bash
+great_expectations --version
+# zsh: command not found: great_expectations
+```
+
+#### 원인
+
+conda 환경에서 Great Expectations가 설치되었지만 CLI 실행 파일이 PATH에 등록되지 않은 상태입니다.
+
+#### 해결책 A: python -m 방식 사용 (권장)
+
+CLI가 PATH에 없어도 이 방식은 항상 동작합니다. 운영 환경에서도 이 방식이 가장 안전합니다.
+
+```bash
+python -m great_expectations --version
+python -m great_expectations init
+```
+
+#### 해결책 B: 현재 conda env에 설치 확인
+
+1. 환경 활성화 확인:
+   ```bash
+   conda activate enjoy-workreduce
+   ```
+
+2. 설치 확인:
+   ```bash
+   pip show great-expectations
+   ```
+
+3. 설치되지 않았다면:
+   ```bash
+   pip install great-expectations==1.11.0
+   ```
+
+#### 해결책 C: PATH 문제 해결 (macOS + conda에서 자주 발생)
+
+실행 파일이 conda 환경 bin 디렉토리에 있는지 확인:
+
+```bash
+ls /opt/anaconda3/envs/enjoy-workreduce/bin | grep great
+```
+
+있다면 직접 실행:
+
+```bash
+/opt/anaconda3/envs/enjoy-workreduce/bin/great_expectations --version
+```
+
+또는 PATH에 추가:
+
+```bash
+export PATH="/opt/anaconda3/envs/enjoy-workreduce/bin:$PATH"
+```
+
+#### Jupyter Notebook에서 실행 시 주의사항
+
+Notebook은 쉘 환경과 다를 수 있습니다. Notebook 셀에서 확인:
+
+```python
+!which python
+!python -m great_expectations --version
+```
+
+Notebook 커널이 다른 환경이라면:
+
+```bash
+python -m ipykernel install --user --name enjoy-workreduce
+```
+
+이후 Jupyter에서 커널을 `enjoy-workreduce`로 변경합니다.
+
+#### 방법별 권장도
+
+| 방법 | 권장도 | 비고 |
+|------|--------|------|
+| `python -m great_expectations` | 강력 권장 | 운영 환경, Airflow, Spark job에서 사용 |
+| PATH 설정 후 `great_expectations` | 권장 | 개발 환경에서 편리 |
+| Jupyter에서 `!great_expectations` | 보통 | 커널 환경 확인 필요 |
+
 ## 라이선스
 
 MIT License
@@ -549,3 +635,6 @@ MIT License
 ## 기여자
 
 - Genius (csj4032@gmail.com)
+
+
+

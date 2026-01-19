@@ -15,7 +15,11 @@ s3transfer==0.11.3
 mysql-connector-python==9.3.0
 confluent-kafka==2.12.2
 pydeequ==1.5.0
-numpy==1.26.4
+numpy==1.24.4
 pandas==2.1.4
 apache-flink==1.20.3
+apache-beam  == 2.48.0
 great-expectations==1.11.0
+pymysql-1.1.2
+psycopg2-binary==2.9.11
+pSQLAlchemy==1.4.54
