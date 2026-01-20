@@ -577,49 +577,102 @@ resultKey = ResultKey(
 
 #### 4. VerificationSuite (데이터 검증)
 
-데이터 품질 규칙을 정의하고 검증합니다.
+데이터 품질 규칙을 정의하고 검증합니다. `satisfies`를 사용하여 커스텀 SQL 조건을 검사할 수 있습니다.
 
 ```python
 from pydeequ.checks import Check, CheckLevel
-from pydeequ.verification import VerificationSuite
+from pydeequ.verification import VerificationSuite, VerificationResult
+
+expected_count = 100
+email_regex = r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"
 
 check = Check(spark, CheckLevel.Error, "Basic data checks") \
-    .hasSize(lambda x: x == 100) \
-    .isComplete("id") \
+    .hasSize(lambda n: n == expected_count) \
+    .isComplete("user_id") \
+    .isComplete("email") \
     .isComplete("name") \
-    .isComplete("age") \
-    .isComplete("gender") \
-    .isComplete("email")
+    .isComplete("created_at") \
+    .isUnique("user_id") \
+    .isUnique("email") \
+    .satisfies("gender IS NULL OR gender IN ('M','F')", "gender_in_domain_or_null", lambda ratio: ratio == 1.0) \
+    .satisfies("age IS NULL OR (age >= 10 AND age <= 100)", "age_range_or_null", lambda ratio: ratio == 1.0) \
+    .satisfies(f"email RLIKE '{email_regex}'", "email_format", lambda ratio: ratio >= 0.99) \
+    .satisfies("signup IS NULL OR signup <= current_date()", "signup_not_in_future", lambda ratio: ratio == 1.0) \
+    .satisfies("signup IS NULL OR created_at >= signup", "created_at_after_signup", lambda ratio: ratio == 1.0)
+
+# Warning 레벨 체크 추가
+warn_check = Check(spark, CheckLevel.Warning, "Users dataset warning checks") \
+    .satisfies("CASE WHEN gender IS NULL THEN true ELSE true END", "noop_for_example", lambda _: True)
 
 check_result = VerificationSuite(spark) \
     .onData(users) \
     .addCheck(check) \
+    .addCheck(warn_check) \
     .useRepository(repository) \
     .saveOrAppendResult(resultKey) \
     .run()
+
+# 검증 결과를 DataFrame으로 확인
+check_df = VerificationResult.checkResultsAsDataFrame(spark, check_result)
+check_df.show(truncate=False)
 ```
 
-#### 5. AnalysisRunner (데이터 분석)
+#### 5. 데이터 변환 (파생 컬럼 생성)
+
+분석을 위해 파생 컬럼을 생성합니다.
+
+```python
+from pyspark.sql.functions import when, col, to_date, lit, datediff
+
+# 가입일부터 생성일까지의 일수 계산
+users_enriched = users.withColumn(
+    "days_from_signup_to_created",
+    when(col("signup").isNotNull(),
+         datediff(to_date(col("created_at")), col("signup"))
+    ).otherwise(lit(None))
+)
+```
+
+#### 6. AnalysisRunner (데이터 분석)
 
 다양한 분석기를 사용하여 데이터 품질 메트릭을 수집합니다.
 
 ```python
-from pydeequ.analyzers import AnalysisRunner, Size, Completeness, Correlation
+from pydeequ.analyzers import (
+    AnalysisRunner, AnalyzerContext, Size, Completeness,
+    ApproxCountDistinct, Distinctness, Minimum, Maximum, Mean, StandardDeviation
+)
 
 analysis_result = AnalysisRunner(spark) \
-    .onData(users) \
+    .onData(users_enriched) \
     .addAnalyzer(Size()) \
-    .addAnalyzer(Completeness("id")) \
+    .addAnalyzer(Completeness("user_id")) \
+    .addAnalyzer(Completeness("email")) \
     .addAnalyzer(Completeness("name")) \
     .addAnalyzer(Completeness("age")) \
-    .addAnalyzer(Correlation("height", "weight")) \
     .addAnalyzer(Completeness("gender")) \
-    .addAnalyzer(Completeness("address")) \
     .addAnalyzer(Completeness("job")) \
-    .addAnalyzer(Completeness("email")) \
+    .addAnalyzer(Completeness("address")) \
+    .addAnalyzer(Completeness("signup")) \
+    .addAnalyzer(Completeness("created_at")) \
+    .addAnalyzer(ApproxCountDistinct("user_id")) \
+    .addAnalyzer(ApproxCountDistinct("email")) \
+    .addAnalyzer(Distinctness("user_id")) \
+    .addAnalyzer(Distinctness("email")) \
+    .addAnalyzer(Minimum("age")) \
+    .addAnalyzer(Maximum("age")) \
+    .addAnalyzer(Mean("age")) \
+    .addAnalyzer(StandardDeviation("age")) \
+    .addAnalyzer(Minimum("days_from_signup_to_created")) \
+    .addAnalyzer(Maximum("days_from_signup_to_created")) \
+    .addAnalyzer(Mean("days_from_signup_to_created")) \
     .useRepository(repository) \
     .saveOrAppendResult(resultKey) \
     .run()
+
+# 메트릭을 DataFrame으로 확인
+metrics_df = AnalyzerContext.successMetricsAsDataFrame(spark, analysis_result)
+metrics_df.show(truncate=False)
 ```
 
 ### 사용자 데이터 스키마
@@ -764,11 +817,56 @@ batch_def = df_asset.add_batch_definition_whole_dataframe(name="news_datasource_
 
 #### 3. Expectation Suite 생성
 
+다양한 데이터 품질 규칙을 정의합니다.
+
 ```python
 suite = context.suites.add(gx.ExpectationSuite(name="news_datasource_suite"))
-suite.add_expectation(gx.expectations.ExpectColumnToExist(column="id"))
+
+# 필수 컬럼 존재 여부 확인
+required_columns = ["id", "published", "subject", "keyword", "title", "summary",
+                    "description", "original_link", "link", "created_at", "updated_at"]
+for c in required_columns:
+    suite.add_expectation(gx.expectations.ExpectColumnToExist(column=c))
+
+# NULL 값 검사 (mostly 옵션으로 허용 비율 설정)
 suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="id"))
-suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="title"))
+suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="title", mostly=0.99))
+suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="link", mostly=0.99))
+
+# 고유성 검사
+suite.add_expectation(gx.expectations.ExpectColumnValuesToBeUnique(column="id"))
+
+# 값 범위 검사
+suite.add_expectation(gx.expectations.ExpectColumnValuesToBeBetween(column="id", min_value=1))
+
+# 허용된 값 집합 검사
+allowed_subjects = ["경제", "사회", "정치", "IT", "국제", "문화"]
+suite.add_expectation(gx.expectations.ExpectColumnValuesToBeInSet(
+    column="subject", value_set=allowed_subjects, mostly=0.98
+))
+
+# 문자열 길이 검사
+suite.add_expectation(gx.expectations.ExpectColumnValueLengthsToBeBetween(
+    column="title", min_value=5, max_value=1000, mostly=0.99
+))
+suite.add_expectation(gx.expectations.ExpectColumnValueLengthsToBeBetween(
+    column="summary", min_value=0, max_value=4000, mostly=0.99
+))
+
+# 정규식 패턴 검사 (URL 형식)
+url_regex = r"^https?://.+"
+suite.add_expectation(gx.expectations.ExpectColumnValuesToMatchRegex(
+    column="link", regex=url_regex, mostly=0.99
+))
+
+# 컬럼 간 비교 검사
+suite.add_expectation(gx.expectations.ExpectColumnPairValuesAToBeGreaterThanB(
+    column_A="updated_at", column_B="created_at", or_equal=True, mostly=0.99
+))
+suite.add_expectation(gx.expectations.ExpectColumnPairValuesToBeEqual(
+    column_A="created_at", column_B="published", mostly=0.99
+))
+
 suite.save()
 ```
 
@@ -810,10 +908,17 @@ result = checkpoint.run(batch_parameters={"dataframe": news})
 
 ### 지원되는 Expectations
 
-| Expectation | 설명 |
-|-------------|------|
-| ExpectColumnToExist | 컬럼 존재 여부 확인 |
-| ExpectColumnValuesToNotBeNull | NULL 값이 없는지 확인 |
+| Expectation | 설명 | 주요 옵션 |
+|-------------|------|----------|
+| ExpectColumnToExist | 컬럼 존재 여부 확인 | column |
+| ExpectColumnValuesToNotBeNull | NULL 값이 없는지 확인 | column, mostly |
+| ExpectColumnValuesToBeUnique | 컬럼 값의 고유성 검사 | column |
+| ExpectColumnValuesToBeBetween | 값이 지정 범위 내에 있는지 확인 | column, min_value, max_value |
+| ExpectColumnValuesToBeInSet | 값이 허용된 집합에 포함되는지 확인 | column, value_set, mostly |
+| ExpectColumnValueLengthsToBeBetween | 문자열 길이가 범위 내인지 확인 | column, min_value, max_value, mostly |
+| ExpectColumnValuesToMatchRegex | 정규식 패턴과 일치하는지 확인 | column, regex, mostly |
+| ExpectColumnPairValuesAToBeGreaterThanB | 컬럼 A 값이 컬럼 B보다 큰지 확인 | column_A, column_B, or_equal, mostly |
+| ExpectColumnPairValuesToBeEqual | 두 컬럼 값이 같은지 확인 | column_A, column_B, mostly |
 
 ### PyDeequ vs Great Expectations
 
