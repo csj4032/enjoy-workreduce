@@ -9,7 +9,7 @@ stores:
       class_name: DatabaseStoreBackend
       module_name: great_expectations.data_context.store.database_store_backend
       table_name: ge_expectations_store
-      key_columns: ["expectation_suite_name"]
+      key_columns: [expectation_suite_name]
       credentials: ${validation_results_db}
 
   validation_results_store:
@@ -20,13 +20,21 @@ stores:
       table_name: ge_validation_results_store
       credentials: ${validation_results_db}
 
+  validation_results_store_minio:
+    class_name: ValidationResultsStore
+    store_backend:
+      class_name: TupleS3StoreBackend
+      bucket: mmix-prod-dataengineer-validation
+      prefix: gx/validation_results_store/
+      endpoint_url: http://minio.mix.io:9000
+
   checkpoint_store:
     class_name: CheckpointStore
     store_backend:
       class_name: DatabaseStoreBackend
       module_name: great_expectations.data_context.store.database_store_backend
       table_name: ge_checkpoint_store
-      key_columns: ["checkpoint_name"]
+      key_columns: [checkpoint_name]
       credentials: ${validation_results_db}
 
   validation_definition_store:
@@ -35,19 +43,12 @@ stores:
       class_name: DatabaseStoreBackend
       module_name: great_expectations.data_context.store.database_store_backend
       table_name: ge_validation_definition_store
-      key_columns: ["validation_definition_name"]
+      key_columns: [validation_definition_name]
       credentials: ${validation_results_db}
 
-  validation_definition_store_minio:
-    class_name: ValidationDefinitionStore
-    store_backend:
-      class_name: TupleS3StoreBackend
-      bucket: mmix-prod-dataengineer-validation
-      prefix: validation_definition_store/
-      endpoint_url: http://minio.mix.io:9000
 
 expectations_store_name: expectations_store
-validation_results_store_name: validation_results_store
+validation_results_store_name: validation_results_store_minio
 checkpoint_store_name: checkpoint_store
 
 data_docs_sites:
@@ -57,22 +58,22 @@ data_docs_sites:
     store_backend:
       class_name: TupleS3StoreBackend
       bucket: mmix-prod-dataengineer-validation
-      prefix: data_docs_sites/
+      prefix: gx/data_docs_sites/
       endpoint_url: http://minio.mix.io:9000
     site_index_builder:
       class_name: DefaultSiteIndexBuilder
 fluent_datasources:
-  spark_ds:
+  news_datasource:
     type: spark
-    id: 7c6d1637-e4e3-4653-87c6-599301b40f0d
+    id: 86ff2f1d-fb7f-43ac-a118-420230c8cc26
     assets:
-      runtime_df:
+      news_datasource_asset:
         type: dataframe
-        id: ff36a1a2-15ca-401f-ace1-c1972dc2948b
-        batch_metadata: { }
+        id: 241c518a-3ffd-4fff-92bf-b721cb8387d8
+        batch_metadata: {}
         batch_definitions:
-          whole_df:
-            id: 2592d898-1231-4c7a-85fd-08100e1aedf6
+          news_datasource_batch_definition_whole_dataframe:
+            id: fb2f9980-f413-4e8f-b7d0-ea16626d7074
             partitioner:
 analytics_enabled:
-data_context_id: 53964a09-6514-440d-a444-501de1b3aca6
+data_context_id:

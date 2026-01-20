@@ -38,6 +38,7 @@ MMIX Data Engineering을 위한 AWS EMR Serverless Python 패키지입니다. Py
 이 프로젝트는 다음과 같은 기능을 제공합니다:
 
 - **데이터 품질 검증**: PyDeequ를 사용한 데이터 완전성, 고유성, 규칙 준수 검사
+- **데이터 품질 검증 (GX)**: Great Expectations를 활용한 Spark DataFrame 검증 및 Data Docs 생성
 - **AWS 통합**: S3, Secrets Manager, MySQL, OpenSearch와의 연동
 - **테스트 데이터 생성**: Faker를 활용한 한국어 로케일 기반 합성 데이터 생성
 - **대용량 처리**: PySpark 기반 분산 데이터 처리 및 파티셔닝
@@ -424,6 +425,20 @@ AWS EMR Serverless 환경에서 실행 가능한 예제:
 - `example_deequ.ipynb`: EMR에서 PyDeequ 실행
 - `example_s3.ipynb`: EMR에서 S3 데이터 처리
 
+### notebooks/spark/
+Spark 클러스터 환경에서 실행 가능한 예제:
+- `01_example_spark.ipynb`: PySpark 기본 사용법
+- `02_example_connection.ipynb`: 연결 테스트
+- `03_example_deequ.ipynb`: PyDeequ 데이터 품질 검증
+- `03_example_gx.ipynb`: **Great Expectations 데이터 품질 검증**
+- `04_example_mysql.ipynb`: MySQL 연동
+- `05_example_s3.ipynb`: S3 데이터 읽기/쓰기
+- `06_example_iceberg.ipynb`: Apache Iceberg 테이블 포맷 처리
+- `10_example_kafka_s3_sync_read.ipynb`: Kafka + S3 동기 읽기
+- `11_example_kafka_flink_s3_sync_load.ipynb`: Kafka + Flink + S3 동기 로드
+- `12_example_kafka_write_stream_to_s3.ipynb`: Kafka 스트림을 S3에 쓰기
+- `99_example_elasticsearch.ipynb`: Elasticsearch 연동
+
 ### notebooks/host/
 로컬 호스트 환경에서 실행 가능한 예제:
 - `example_kafka.ipynb`: Kafka 스트리밍 처리
@@ -490,6 +505,134 @@ pytest tests/test_specific.py -v
 | duckdb | 1.3.0 | 임베디드 분석 데이터베이스 |
 | pandas | 2.1.4 | 데이터 분석 및 처리 |
 | numpy | 1.26.4 | 수치 계산 |
+| great-expectations | 1.11.0 | 데이터 품질 검증 프레임워크 |
+
+## Great Expectations 설정
+
+프로젝트는 Great Expectations 1.11.0을 활용한 데이터 품질 검증 인프라를 포함합니다.
+
+### 디렉토리 구조
+
+```
+notebooks/spark/great_expectations/
+├── great_expectations.yml           # 메인 설정 파일
+├── checkpoints/
+│   └── spark_runtime_checkpoint.json
+├── expectations/
+│   └── spark_df_suite.json          # 기대값 스위트
+├── plugins/
+│   └── custom_data_docs/
+│       └── styles/
+│           └── data_docs_custom_styles.css
+├── uncommitted/
+│   ├── config_variables.yml         # 환경 변수 설정
+│   └── validations/                 # 검증 결과 저장
+└── validation_definitions/
+```
+
+### 주요 구성 요소
+
+#### 1. 데이터 소스 (Spark)
+
+```yaml
+fluent_datasources:
+  spark_ds:
+    type: spark
+    assets:
+      runtime_df:
+        type: dataframe
+        batch_definitions:
+          whole_df:
+            partitioner: null
+```
+
+런타임 Spark DataFrame을 검증 대상으로 사용합니다.
+
+#### 2. Store 구성
+
+검증 결과와 메타데이터를 PostgreSQL과 Minio S3에 저장합니다.
+
+| Store | 저장소 | 테이블/경로 |
+|-------|--------|------------|
+| expectations_store | PostgreSQL | ge_expectations_store |
+| validation_results_store | PostgreSQL | ge_validation_results_store |
+| checkpoint_store | PostgreSQL | ge_checkpoint_store |
+| validation_definition_store | PostgreSQL | ge_validation_definition_store |
+| Data Docs | Minio S3 | mmix-prod-dataengineer-validation/data_docs_sites/ |
+
+#### 3. 환경 변수 설정
+
+`uncommitted/config_variables.yml`:
+
+```yaml
+validation_results_db:
+  drivername: postgresql+psycopg2
+  username: validations
+  password: validations
+  host: postgres.mmix.io
+  port: 5432
+  database: validations
+```
+
+#### 4. 기대값 스위트 예제
+
+`spark_df_suite.json`:
+
+```json
+{
+  "expectations": [
+    {
+      "type": "expect_column_to_exist",
+      "kwargs": { "column": "user_id" },
+      "severity": "critical"
+    }
+  ]
+}
+```
+
+### 사용 예제
+
+`03_example_gx.ipynb` 노트북에서 전체 워크플로우를 확인할 수 있습니다.
+
+```python
+import great_expectations as gx
+from pyspark.sql import SparkSession
+
+# Spark 세션 생성
+spark = SparkSession.builder \
+    .master("spark://spark-master.mmix.io:7077") \
+    .appName("Great Expectations Example") \
+    .getOrCreate()
+
+# Great Expectations 컨텍스트 로드
+context = gx.get_context()
+
+# 데이터 소스 및 자산 가져오기
+datasource = context.data_sources.get("spark_ds")
+asset = datasource.get_asset("runtime_df")
+batch_definition = asset.get_batch_definition("whole_df")
+
+# DataFrame으로 배치 생성
+batch = batch_definition.get_batch(batch_parameters={"dataframe": df})
+
+# 기대값 스위트 가져오기
+expectation_suite = context.suites.get("spark_df_suite")
+
+# 검증 정의 생성 및 실행
+validation_definition = context.validation_definitions.get("spark_df_validation_definition")
+checkpoint = context.checkpoints.get("spark_runtime_checkpoint")
+result = checkpoint.run()
+```
+
+### PyDeequ vs Great Expectations
+
+| 기능 | PyDeequ | Great Expectations |
+|------|---------|-------------------|
+| 설정 방식 | 프로그래매틱 | YAML/JSON 선언적 |
+| 결과 저장 | 커스텀 구현 필요 | Store 내장 지원 |
+| Data Docs | 없음 | HTML 보고서 자동 생성 |
+| Spark 지원 | 네이티브 | 네이티브 |
+| 체크포인트 | 없음 | 내장 지원 |
 
 ## 프로젝트 구조
 
@@ -506,6 +649,8 @@ enjoy-workreduce/
 ├── notebooks/
 │   ├── docker/                       # Docker 환경 예제
 │   ├── emr/                         # EMR 환경 예제
+│   ├── spark/                        # Spark 클러스터 환경 예제
+│   │   └── great_expectations/       # Great Expectations 설정
 │   └── host/                        # 로컬 호스트 예제
 ├── tests/                           # 테스트 코드
 ├── dist/                            # 빌드 결과물
