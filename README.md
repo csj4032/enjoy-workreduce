@@ -507,6 +507,155 @@ pytest tests/test_specific.py -v
 | numpy | 1.26.4 | 수치 계산 |
 | great-expectations | 1.11.0 | 데이터 품질 검증 프레임워크 |
 
+## PyDeequ Spark 클러스터 예제
+
+`notebooks/spark/03_example_deequ.ipynb`은 Spark 클러스터 환경에서 PyDeequ를 활용한 데이터 품질 검증 예제입니다.
+
+### 주요 기능
+
+#### 1. Faker 기반 테스트 데이터 생성
+
+한국어 로케일(`ko_KR`)을 사용하여 현실적인 사용자 데이터를 생성합니다.
+
+```python
+from faker import Faker
+
+def generate_users(fake: Faker, count: int):
+    rows = []
+    for i in range(1, count + 1):
+        rows.append({
+            "user_id": i,
+            "email": fake.unique.email(),
+            "name": fake.name(),
+            "age": fake.random_int(min=10, max=100),
+            "gender": random.choice(["M", "F"]),
+            "job": fake.job(),
+            "address": fake.address(),
+            "signup": (datetime.now() - timedelta(days=random.randint(0, 365))).date(),
+            "created_at": datetime.now()
+        })
+    return rows
+
+users = spark.createDataFrame(data=generate_users(Faker("ko_KR"), 100), schema=user_schema)
+```
+
+#### 2. S3 (Minio) 연동 Spark 세션
+
+로컬 Minio 환경과 연동하여 메트릭 결과를 S3에 저장합니다.
+
+```python
+spark = SparkSession.builder \
+    .appName("PyDeequ Example") \
+    .master("spark://spark-master.mmix.io:7077") \
+    .config("spark.hadoop.fs.s3a.endpoint", "http://minio.mmix.io:9000") \
+    .config("spark.hadoop.fs.s3a.access.key", "mmix") \
+    .config("spark.hadoop.fs.s3a.secret.key", "mmixmmix") \
+    .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
+    .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+    .config("spark.sql.shuffle.partitions", "1") \
+    .getOrCreate()
+```
+
+#### 3. FileSystemMetricsRepository
+
+PyDeequ의 메트릭 결과를 S3에 JSON 형식으로 저장합니다.
+
+```python
+from pydeequ.repository import FileSystemMetricsRepository, ResultKey
+
+repository = FileSystemMetricsRepository(
+    spark,
+    "s3a://mmix-prod-dataengineer-validation/deequ/sample/metrics/orders/metrics.json"
+)
+resultKey = ResultKey(
+    spark,
+    ResultKey.current_milli_time(),
+    {"pipeline": "orders", "dataset": "orders", "env": "prod"}
+)
+```
+
+#### 4. VerificationSuite (데이터 검증)
+
+데이터 품질 규칙을 정의하고 검증합니다.
+
+```python
+from pydeequ.checks import Check, CheckLevel
+from pydeequ.verification import VerificationSuite
+
+check = Check(spark, CheckLevel.Error, "Basic data checks") \
+    .hasSize(lambda x: x == 100) \
+    .isComplete("id") \
+    .isComplete("name") \
+    .isComplete("age") \
+    .isComplete("gender") \
+    .isComplete("email")
+
+check_result = VerificationSuite(spark) \
+    .onData(users) \
+    .addCheck(check) \
+    .useRepository(repository) \
+    .saveOrAppendResult(resultKey) \
+    .run()
+```
+
+#### 5. AnalysisRunner (데이터 분석)
+
+다양한 분석기를 사용하여 데이터 품질 메트릭을 수집합니다.
+
+```python
+from pydeequ.analyzers import AnalysisRunner, Size, Completeness, Correlation
+
+analysis_result = AnalysisRunner(spark) \
+    .onData(users) \
+    .addAnalyzer(Size()) \
+    .addAnalyzer(Completeness("id")) \
+    .addAnalyzer(Completeness("name")) \
+    .addAnalyzer(Completeness("age")) \
+    .addAnalyzer(Correlation("height", "weight")) \
+    .addAnalyzer(Completeness("gender")) \
+    .addAnalyzer(Completeness("address")) \
+    .addAnalyzer(Completeness("job")) \
+    .addAnalyzer(Completeness("email")) \
+    .useRepository(repository) \
+    .saveOrAppendResult(resultKey) \
+    .run()
+```
+
+### 사용자 데이터 스키마
+
+```python
+from pyspark.sql.types import StructType, StructField, LongType, StringType, IntegerType, DateType, TimestampType
+
+user_schema = StructType([
+    StructField("user_id", LongType(), False),
+    StructField("email", StringType(), False),
+    StructField("name", StringType(), False),
+    StructField("age", IntegerType(), True),
+    StructField("gender", StringType(), True),
+    StructField("job", StringType(), True),
+    StructField("address", StringType(), True),
+    StructField("signup", DateType(), True),
+    StructField("created_at", TimestampType(), True)
+])
+```
+
+### 메트릭 저장 경로
+
+| 항목 | 경로 |
+|------|------|
+| 메트릭 저장소 | `s3a://mmix-prod-dataengineer-validation/deequ/sample/metrics/orders/metrics.json` |
+
+### PyDeequ 분석기 및 검증 체크
+
+| 분석기/체크 | 설명 |
+|-------------|------|
+| Size | 전체 레코드 수 |
+| Completeness | 컬럼의 비어있지 않은 값 비율 |
+| Correlation | 두 수치 컬럼 간의 상관관계 |
+| hasSize | 레코드 수가 조건을 만족하는지 확인 |
+| isComplete | 컬럼에 NULL 값이 없는지 확인 |
+
 ## Great Expectations 설정
 
 프로젝트는 Great Expectations 1.11.0을 활용한 데이터 품질 검증 인프라를 포함합니다.
@@ -516,18 +665,12 @@ pytest tests/test_specific.py -v
 ```
 notebooks/spark/great_expectations/
 ├── great_expectations.yml           # 메인 설정 파일
-├── checkpoints/
-│   └── spark_runtime_checkpoint.json
-├── expectations/
-│   └── spark_df_suite.json          # 기대값 스위트
 ├── plugins/
 │   └── custom_data_docs/
 │       └── styles/
 │           └── data_docs_custom_styles.css
-├── uncommitted/
-│   ├── config_variables.yml         # 환경 변수 설정
-│   └── validations/                 # 검증 결과 저장
-└── validation_definitions/
+└── uncommitted/
+    └── config_variables.yml         # 환경 변수 설정 (PostgreSQL 연결 정보)
 ```
 
 ### 주요 구성 요소
@@ -536,14 +679,14 @@ notebooks/spark/great_expectations/
 
 ```yaml
 fluent_datasources:
-  spark_ds:
+  news_datasource:
     type: spark
     assets:
-      runtime_df:
+      news_datasource_asset:
         type: dataframe
         batch_definitions:
-          whole_df:
-            partitioner: null
+          news_datasource_batch_definition_whole_dataframe:
+            partitioner:
 ```
 
 런타임 Spark DataFrame을 검증 대상으로 사용합니다.
@@ -556,9 +699,10 @@ fluent_datasources:
 |-------|--------|------------|
 | expectations_store | PostgreSQL | ge_expectations_store |
 | validation_results_store | PostgreSQL | ge_validation_results_store |
+| validation_results_store_minio | Minio S3 | mmix-prod-dataengineer-validation/gx/validation_results_store/ |
 | checkpoint_store | PostgreSQL | ge_checkpoint_store |
 | validation_definition_store | PostgreSQL | ge_validation_definition_store |
-| Data Docs | Minio S3 | mmix-prod-dataengineer-validation/data_docs_sites/ |
+| Data Docs (minio_site) | Minio S3 | mmix-prod-dataengineer-validation/gx/data_docs_sites/ |
 
 #### 3. 환경 변수 설정
 
@@ -574,65 +718,113 @@ validation_results_db:
   database: validations
 ```
 
-#### 4. 기대값 스위트 예제
-
-`spark_df_suite.json`:
-
-```json
-{
-  "expectations": [
-    {
-      "type": "expect_column_to_exist",
-      "kwargs": { "column": "user_id" },
-      "severity": "critical"
-    }
-  ]
-}
-```
-
 ### 사용 예제
 
-`03_example_gx.ipynb` 노트북에서 전체 워크플로우를 확인할 수 있습니다.
+`03_example_gx.ipynb` 노트북에서 뉴스 데이터 검증 워크플로우를 확인할 수 있습니다.
+
+#### 1. 테스트 데이터 생성
+
+```python
+from faker import Faker
+
+def generate_news_row(fake: Faker, id_: int):
+    published = random_dt(14)
+    return {
+        "id": id_,
+        "published": published,
+        "subject": random.choice(["경제", "사회", "정치", "IT", "국제", "문화"]),
+        "keyword": ", ".join(fake.words(nb=random.randint(2, 6)))[:200],
+        "title": fake.sentence(nb_words=12)[:1000],
+        "summary": fake.text(max_nb_chars=600)[:4000],
+        "description": fake.text(max_nb_chars=2500),
+        "original_link": fake.url()[:500],
+        "link": fake.url()[:500],
+        "created_at": published,
+        "updated_at": published,
+    }
+
+news = spark.createDataFrame(generate_news_data(Faker("ko_KR"), 10), schema=schema)
+```
+
+#### 2. Great Expectations 컨텍스트 및 데이터소스 설정
 
 ```python
 import great_expectations as gx
-from pyspark.sql import SparkSession
 
-# Spark 세션 생성
-spark = SparkSession.builder \
-    .master("spark://spark-master.mmix.io:7077") \
-    .appName("Great Expectations Example") \
-    .getOrCreate()
+context = gx.get_context(
+    mode="file",
+    context_root_dir="/path/to/great_expectations"
+)
 
-# Great Expectations 컨텍스트 로드
-context = gx.get_context()
-
-# 데이터 소스 및 자산 가져오기
-datasource = context.data_sources.get("spark_ds")
-asset = datasource.get_asset("runtime_df")
-batch_definition = asset.get_batch_definition("whole_df")
-
-# DataFrame으로 배치 생성
-batch = batch_definition.get_batch(batch_parameters={"dataframe": df})
-
-# 기대값 스위트 가져오기
-expectation_suite = context.suites.get("spark_df_suite")
-
-# 검증 정의 생성 및 실행
-validation_definition = context.validation_definitions.get("spark_df_validation_definition")
-checkpoint = context.checkpoints.get("spark_runtime_checkpoint")
-result = checkpoint.run()
+# 데이터소스 및 자산 설정
+news_datasource = context.data_sources.add_spark(name="news_datasource")
+df_asset = news_datasource.add_dataframe_asset(name="news_datasource_asset")
+batch_def = df_asset.add_batch_definition_whole_dataframe(name="news_datasource_batch_definition_whole_dataframe")
 ```
+
+#### 3. Expectation Suite 생성
+
+```python
+suite = context.suites.add(gx.ExpectationSuite(name="news_datasource_suite"))
+suite.add_expectation(gx.expectations.ExpectColumnToExist(column="id"))
+suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="id"))
+suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="title"))
+suite.save()
+```
+
+#### 4. Validation Definition 및 실행
+
+```python
+validation_definition = context.validation_definitions.add(
+    gx.ValidationDefinition(
+        name="news_datasource_validation_definition",
+        data=batch_def,
+        suite=suite
+    )
+)
+
+validation_results = validation_definition.run(
+    batch_parameters={"dataframe": news},
+    result_format={"result_format": "COMPLETE"}
+)
+```
+
+#### 5. Checkpoint 실행 및 Data Docs 업데이트
+
+```python
+from great_expectations.checkpoint import Checkpoint
+
+actions = [
+    {"name": "update_data_docs", "type": "update_data_docs", "site_names": ["minio_site"]}
+]
+
+checkpoint = Checkpoint(
+    name="news_datasource_runtime_checkpoint",
+    validation_definitions=[{"name": "news_datasource_validation_definition"}],
+    actions=actions
+)
+checkpoint = context.checkpoints.add(checkpoint)
+
+result = checkpoint.run(batch_parameters={"dataframe": news})
+```
+
+### 지원되는 Expectations
+
+| Expectation | 설명 |
+|-------------|------|
+| ExpectColumnToExist | 컬럼 존재 여부 확인 |
+| ExpectColumnValuesToNotBeNull | NULL 값이 없는지 확인 |
 
 ### PyDeequ vs Great Expectations
 
 | 기능 | PyDeequ | Great Expectations |
 |------|---------|-------------------|
 | 설정 방식 | 프로그래매틱 | YAML/JSON 선언적 |
-| 결과 저장 | 커스텀 구현 필요 | Store 내장 지원 |
+| 결과 저장 | FileSystemMetricsRepository (S3) | Store 내장 지원 (PostgreSQL, S3) |
 | Data Docs | 없음 | HTML 보고서 자동 생성 |
 | Spark 지원 | 네이티브 | 네이티브 |
 | 체크포인트 | 없음 | 내장 지원 |
+| 메트릭 관리 | ResultKey로 버전 관리 | ValidationDefinition으로 관리 |
 
 ## 프로젝트 구조
 
