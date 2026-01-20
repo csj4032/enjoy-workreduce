@@ -409,17 +409,6 @@ connection.close()
 
 프로젝트에는 다양한 환경에서 실행 가능한 Jupyter 노트북 예제가 포함되어 있습니다.
 
-### notebooks/docker/
-로컬 Docker 환경에서 실행 가능한 예제:
-- `example_connection.ipynb`: 연결 테스트
-- `example_deequ.ipynb`: PyDeequ 데이터 품질 검증
-- `example_elasticsearch.ipynb`: Elasticsearch 연동
-- `example_flink.ipynb`: Apache Flink 스트리밍 처리 (Kafka CDC)
-- `example_iceberg.ipynb`: Apache Iceberg 테이블 포맷 처리
-- `example_mysql.ipynb`: MySQL 연동
-- `example_s3.ipynb`: S3 데이터 읽기/쓰기
-- `example_spark.ipynb`: PySpark 기본 사용법
-
 ### notebooks/emr/
 AWS EMR Serverless 환경에서 실행 가능한 예제:
 - `example_deequ.ipynb`: EMR에서 PyDeequ 실행
@@ -430,19 +419,20 @@ Spark 클러스터 환경에서 실행 가능한 예제:
 - `01_example_spark.ipynb`: PySpark 기본 사용법
 - `02_example_connection.ipynb`: 연결 테스트
 - `03_example_deequ.ipynb`: PyDeequ 데이터 품질 검증
-- `03_example_gx.ipynb`: **Great Expectations 데이터 품질 검증**
+- `03_example_gx.ipynb`: Great Expectations 데이터 품질 검증
 - `04_example_mysql.ipynb`: MySQL 연동
 - `05_example_s3.ipynb`: S3 데이터 읽기/쓰기
 - `06_example_iceberg.ipynb`: Apache Iceberg 테이블 포맷 처리
+- `07_example_deltalake.ipynb`: Delta Lake 테이블 포맷 처리
+- `08_example_hudi.ipynb`: Apache Hudi 테이블 포맷 처리
 - `10_example_kafka_s3_sync_read.ipynb`: Kafka + S3 동기 읽기
 - `11_example_kafka_flink_s3_sync_load.ipynb`: Kafka + Flink + S3 동기 로드
 - `12_example_kafka_write_stream_to_s3.ipynb`: Kafka 스트림을 S3에 쓰기
 - `99_example_elasticsearch.ipynb`: Elasticsearch 연동
 
-### notebooks/host/
-로컬 호스트 환경에서 실행 가능한 예제:
-- `example_kafka.ipynb`: Kafka 스트리밍 처리
-- `example_kafka_avro.ipynb`: Kafka + Avro 스키마 처리
+### notebooks/flink/
+Apache Flink 스트리밍 처리 예제:
+- `01_example_flink.ipynb`: Flink 기본 스트리밍 처리
 
 ## AWS 배포
 
@@ -699,15 +689,28 @@ user_schema = StructType([
 |------|------|
 | 메트릭 저장소 | `s3a://mmix-prod-dataengineer-validation/deequ/sample/metrics/orders/metrics.json` |
 
-### PyDeequ 분석기 및 검증 체크
+### PyDeequ 분석기 (Analyzer)
 
-| 분석기/체크 | 설명 |
-|-------------|------|
+| 분석기 | 설명 |
+|--------|------|
 | Size | 전체 레코드 수 |
 | Completeness | 컬럼의 비어있지 않은 값 비율 |
+| ApproxCountDistinct | 고유값의 근사 개수 (HyperLogLog 사용) |
+| Distinctness | 고유값 비율 (고유값 수 / 전체 행 수) |
+| Minimum | 수치 컬럼의 최솟값 |
+| Maximum | 수치 컬럼의 최댓값 |
+| Mean | 수치 컬럼의 평균값 |
+| StandardDeviation | 수치 컬럼의 표준편차 |
 | Correlation | 두 수치 컬럼 간의 상관관계 |
+
+### PyDeequ 검증 체크 (Check)
+
+| 체크 | 설명 |
+|------|------|
 | hasSize | 레코드 수가 조건을 만족하는지 확인 |
 | isComplete | 컬럼에 NULL 값이 없는지 확인 |
+| isUnique | 컬럼 값이 고유한지 확인 |
+| satisfies | 커스텀 SQL 조건을 만족하는지 확인 (도메인 검사, 범위 검사, 정규식 검사 등) |
 
 ## Great Expectations 설정
 
