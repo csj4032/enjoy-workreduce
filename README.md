@@ -490,11 +490,15 @@ pytest tests/test_specific.py -v
 | Faker | 40.1.0 | 합성 테스트 데이터 생성 |
 | confluent-kafka | 2.12.2 | Kafka 스트리밍 처리 |
 | apache-flink | 1.20.3 | 실시간 스트리밍 데이터 처리 |
+| apache-beam | 2.48.0 | 배치/스트리밍 통합 데이터 처리 |
 | mysql-connector-python | 9.3.0 | MySQL 데이터베이스 연결 |
+| pymysql | 1.1.2 | MySQL 데이터베이스 연결 (대안) |
+| psycopg2-binary | 2.9.11 | PostgreSQL 데이터베이스 연결 |
+| SQLAlchemy | 1.4.54 | SQL 툴킷 및 ORM |
 | elasticsearch | 8.19.2 | Elasticsearch 연동 |
 | duckdb | 1.3.0 | 임베디드 분석 데이터베이스 |
 | pandas | 2.1.4 | 데이터 분석 및 처리 |
-| numpy | 1.26.4 | 수치 계산 |
+| numpy | 1.24.4 | 수치 계산 |
 | great-expectations | 1.11.0 | 데이터 품질 검증 프레임워크 |
 
 ## PyDeequ Spark 클러스터 예제
@@ -947,11 +951,10 @@ enjoy-workreduce/
 │   ├── example_spark_deequ.py        # PyDeequ 합성 데이터 예제
 │   └── example_spark_mysql.py        # MySQL 연동 PyDeequ 예제
 ├── notebooks/
-│   ├── docker/                       # Docker 환경 예제
 │   ├── emr/                         # EMR 환경 예제
-│   ├── spark/                        # Spark 클러스터 환경 예제
-│   │   └── great_expectations/       # Great Expectations 설정
-│   └── host/                        # 로컬 호스트 예제
+│   ├── flink/                       # Apache Flink 스트리밍 예제
+│   └── spark/                        # Spark 클러스터 환경 예제
+│       └── great_expectations/       # Great Expectations 설정
 ├── tests/                           # 테스트 코드
 ├── dist/                            # 빌드 결과물
 ├── pyproject.toml                   # 프로젝트 메타데이터
