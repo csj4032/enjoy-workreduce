@@ -38,19 +38,13 @@ def filter_valid_s3_paths(s3_client_, bucket: str, prefixes: list[str]) -> list[
     return [f"s3a://{bucket}/{prefix}/*.json" for prefix in prefixes if s3_exists(s3_client_, bucket, prefix)]
 
 
-def get_database_connection(secrets_: dict) -> MySQLConnection:
-    return MySQLConnection(
-        host=secrets_["host"],
-        port=secrets_["port"],
-        user=secrets_["user"],
-        password=secrets_["password"],
-        database=secrets_["database"]
-    )
+def get_mysql_connection(secrets_: dict) -> MySQLConnection:
+    return MySQLConnection(host=secrets_["host"], port=secrets_["port"], user=secrets_["user"], password=secrets_["password"], database=secrets_["database"])
 
 
 def data_quality_logs(dataframe, secrets: dict, environment: str) -> None:
     logging.info(f"Data Quality Logs: {dataframe} Environment: {environment}")
-    connection = get_database_connection(secrets)
+    connection = get_mysql_connection(secrets)
     columns_ = dataframe.columns
     insert_query = f"INSERT INTO data_quality_logs ({', '.join(columns_)}) VALUES ({', '.join([f'%({col_})s' for col_ in columns_])}) ON DUPLICATE KEY UPDATE value = VALUES(value)"
     data = [row.asDict() for row in dataframe.collect()]

@@ -4,6 +4,7 @@ import json
 import logging
 import random
 from datetime import datetime
+from typing import Dict
 from zoneinfo import ZoneInfo
 
 from pydeequ.analyzers import AnalysisRunner, AnalyzerContext, Size, Completeness, Uniqueness, Distinctness, ApproxCountDistinct, Compliance, Histogram, Entropy
@@ -12,6 +13,10 @@ from pyspark.sql.functions import lit, col, to_date, to_timestamp
 from pyspark.sql.types import StructType, StructField, StringType
 
 from mmix.common.utils import data_quality_logs, generate_user_session_logs
+
+
+def decode_secret(b64_json: str) -> Dict:
+    return json.loads(b64.b64decode(b64_json).decode("utf-8"))
 
 
 def get_args(parser):
@@ -89,7 +94,7 @@ if __name__ == "__main__":
     _args = get_args(argparse.ArgumentParser())
     _dag_id = _args.dag_id
     _run_id = _args.run_id
-    _secret = json.loads(b64.b64decode(_args.secret).decode("utf-8"))
+    _secret = decode_secret(_args.secret)
     _environment = _args.environment
     _logical_datetime = _args.logical_datetime
 

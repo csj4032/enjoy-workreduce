@@ -20,7 +20,7 @@ def get_args(parser):
     parser.add_argument('--dag_id', type=str, default="dataplatform_dashboard_international_risk_daily", help="Dag ID for tracking")
     parser.add_argument('--run_id', type=str, default="", help="Run ID for tracking")
     parser.add_argument("--mysql_mmix_secret", type=str, required=False, help="base64 encoded json string")
-    parser.add_argument("--mysql_observability_secret", type=str, required=False, help="base64 encoded json string")
+    parser.add_argument("--postgresql_observability_secret", type=str, required=False, help="base64 encoded json string")
     parser.add_argument('--environment', type=str, default="prod", help="Environment for the job (e.g., dev, stg, prod)")
     parser.add_argument('--logical_datetime', type=str, default=datetime.now(tz=ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S"))
     logging.info(f"Arguments: {parser.parse_args()}")
@@ -33,12 +33,7 @@ def decode_secret(b64_json: str) -> Dict:
 
 def build_mysql_jdbc(secret: Dict) -> Tuple[str, Dict]:
     jdbc_url_ = f"jdbc:mysql://{secret['host']}:{secret['port']}/{secret['database']}?useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=utf8"
-    jdbc_props_ = {
-        "user": secret["user"],
-        "password": secret["password"],
-        "driver": secret.get("driver", _default_mysql_driver),
-        "fetchsize": "1000",
-    }
+    jdbc_props_ = {"user": secret["user"], "password": secret["password"], "driver": secret.get("driver", _default_mysql_driver), "fetchsize": "1000"}
     return jdbc_url_, jdbc_props_
 
 
@@ -104,7 +99,7 @@ if __name__ == "__main__":
     _environment = _args.environment
     _logical_datetime = _args.logical_datetime
     _mysql_mmix_secret = decode_secret(_args.mysql_mmix_secret)
-    _mysql_observability_secret = decode_secret(_args.mysql_observability_secret)
+    _postgresql_observability_secret = decode_secret(_args.postgresql_observability_secret)
 
     with SparkSession.builder.appName("dataplatform_dashboard_international_risk_daily").getOrCreate() as _spark:
         logger.info("Spark session started.")
@@ -127,4 +122,4 @@ if __name__ == "__main__":
                 .withColumn("run_id", lit(_run_id)) \
                 .withColumn("logical_datetime", to_timestamp(lit(_logical_datetime), "yyyy-MM-dd HH:mm:ss"))
             metrics_dataframe.show(truncate=False)
-            data_quality_logs(metrics_dataframe, _mysql_observability_secret, _environment)
+            data_quality_logs(metrics_dataframe, _postgresql_observability_secret, _environment)
