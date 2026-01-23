@@ -232,7 +232,7 @@ echo '{"host":"mysql-host.com","port":3306,"user":"admin","password":"pass","dat
 spark-submit \
   --jars /path/to/mysql-connector-java.jar \
   --py-files dist/enjoy_workreduce-0.0.1-py3-none-any.whl \
-  src/example_spark_mysql.py \
+  src/example_spark_news.py \
   --dag_id "dataplatform_dashboard_international_risk_daily" \
   --run_id "manual_run_001" \
   --mysql_mmix_secret "$(echo '{"host":"source-db.com","port":3306,"user":"admin","password":"pass","database":"mmix"}' | base64)" \

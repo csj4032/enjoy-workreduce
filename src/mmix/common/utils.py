@@ -52,7 +52,7 @@ def validation_results_store(dataframe, secrets: dict, environment: str) -> None
     connection = get_postgresql_connection(secrets)
     columns_ = dataframe.columns
     insert_query = f"""
-        INSERT INTO dq_data_quality_logs ({", ".join(columns_)}) 
+        INSERT INTO dq_validation_results_store ({", ".join(columns_)}) 
         VALUES ({", ".join([f"%({c})s" for c in columns_])}) 
         ON CONFLICT (run_id, entity, instance, name, run_name) 
         DO UPDATE SET 

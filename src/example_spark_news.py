@@ -19,7 +19,7 @@ _default_mysql_driver = "com.mysql.jdbc.Driver"
 def get_args(parser):
     parser.add_argument('--dag_id', type=str, default="dataplatform_dashboard_international_risk_daily", help="Dag ID for tracking")
     parser.add_argument('--run_id', type=str, default="", help="Run ID for tracking")
-    parser.add_argument("--mysql_mmix_secret", type=str, required=False, help="base64 encoded json string")
+    parser.add_argument("--mysql_external_secret", type=str, required=False, help="base64 encoded json string")
     parser.add_argument("--postgresql_observability_secret", type=str, required=False, help="base64 encoded json string")
     parser.add_argument('--environment', type=str, default="prod", help="Environment for the job (e.g., dev, stg, prod)")
     parser.add_argument('--logical_datetime', type=str, default=datetime.now(tz=ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S"))
@@ -98,20 +98,20 @@ if __name__ == "__main__":
     _run_id = _args.run_id
     _environment = _args.environment
     _logical_datetime = _args.logical_datetime
-    _mysql_mmix_secret = decode_secret(_args.mysql_mmix_secret)
+    _mysql_external_secret = decode_secret(_args.mysql_external_secret)
     _postgresql_observability_secret = decode_secret(_args.postgresql_observability_secret)
 
     with SparkSession.builder.appName("dataplatform_dashboard_international_risk_daily").getOrCreate() as _spark:
         logger.info("Spark session started.")
         logger.info("Dag ID: %s, Run ID: %s, Logical Datetime: %s, Environment: %s", _dag_id, _run_id, _logical_datetime, _environment)
         logger.info("Postgresql Observability Secret: %s", _postgresql_observability_secret)
-        jdbc_url, jdbc_props = build_mysql_jdbc(_mysql_mmix_secret)
-        lower_bound, upper_bound = fetch_id_bounds(_spark, jdbc_url, jdbc_props, table="news_articles", id_col="id")
+        jdbc_url, jdbc_props = build_mysql_jdbc(_mysql_external_secret)
+        lower_bound, upper_bound = fetch_id_bounds(_spark, jdbc_url, jdbc_props, table="news", id_col="id")
 
         if lower_bound == 0 and upper_bound == 0:
-            logger.warning("news_articles is empty. Skip analyzers.")
+            logger.warning("news is empty. Skip analyzers.")
         else:
-            dataframe = read_jdbc_partitioned(_spark, jdbc_url, jdbc_props, table="news_articles", partition_col="id", lower_bound_=lower_bound, upper_bound_=upper_bound, num_partitions=4) \
+            dataframe = read_jdbc_partitioned(_spark, jdbc_url, jdbc_props, table="news", partition_col="id", lower_bound_=lower_bound, upper_bound_=upper_bound, num_partitions=4) \
                 .withColumn("title_len", F.length(F.col("title"))) \
                 .withColumn("summary_len", F.length(F.col("summary"))) \
                 .withColumn("description_len", F.length(F.col("description")))
