@@ -6,9 +6,10 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import boto3
+import psycopg2
 from faker import Faker
 from mysql.connector import MySQLConnection
-
+from psycopg2.extensions import connection as PGConnection
 
 def get_secret_value(secret_name: str, region_name: str = "ap-northeast-2") -> Optional[list]:
     client = boto3.client('secretsmanager', region_name=region_name)
@@ -42,15 +43,34 @@ def get_mysql_connection(secrets_: dict) -> MySQLConnection:
     return MySQLConnection(host=secrets_["host"], port=secrets_["port"], user=secrets_["user"], password=secrets_["password"], database=secrets_["database"])
 
 
-def data_quality_logs(dataframe, secrets: dict, environment: str) -> None:
+def get_postgresql_connection(secrets_: dict) -> PGConnection:
+    return psycopg2.connect(host=secrets_["host"], port=secrets_["port"], dbname=secrets_["database"], user=secrets_["user"], password=secrets_["password"], connect_timeout=10)
+
+
+def validation_results_store(dataframe, secrets: dict, environment: str) -> None:
     logging.info(f"Data Quality Logs: {dataframe} Environment: {environment}")
-    connection = get_mysql_connection(secrets)
+    connection = get_postgresql_connection(secrets)
     columns_ = dataframe.columns
-    insert_query = f"INSERT INTO data_quality_logs ({', '.join(columns_)}) VALUES ({', '.join([f'%({col_})s' for col_ in columns_])}) ON DUPLICATE KEY UPDATE value = VALUES(value)"
+    insert_query = f"""
+        INSERT INTO dq_data_quality_logs ({", ".join(columns_)}) 
+        VALUES ({", ".join([f"%({c})s" for c in columns_])}) 
+        ON CONFLICT (run_id, entity, instance, name, run_name) 
+        DO UPDATE SET 
+            value = EXCLUDED.value,
+            logical_datetime = EXCLUDED.logical_datetime,
+            updated_at = CURRENT_TIMESTAMP;
+    """
     data = [row.asDict() for row in dataframe.collect()]
-    with connection.cursor() as cursor:
-        cursor.executemany(insert_query, data)
-    connection.commit()
+    try:
+        with connection:
+            with connection.cursor() as cursor:
+                cursor.executemany(insert_query, data)
+    except Exception as e:
+        logging.error(f"Error inserting ETL analysis logs: {e}")
+        raise
+    finally:
+        logging.info(f"Finished inserting ETL analysis logs: {connection}")
+        connection.close()
 
 
 fake = Faker("ko_KR")

@@ -453,7 +453,11 @@ aws s3 cp ./dist s3://mmix-prod-dataengineer-workreduce/dist --recursive --profi
 로컬 Minio 환경에 배포하는 경우:
 
 ```bash
-aws s3 cp ./src s3://mmix-prod-dataengineer-workreduce/src --recursive --endpoint-url http://minio:9000 --profile minio
+# 소스 코드 업로드
+aws s3 cp ./src s3://mmix-prod-dataengineer-workreduce/src --recursive --endpoint-url http://minio.mmix.io:9000 --profile minio
+
+# 빌드된 패키지 업로드
+aws s3 cp ./dist s3://mmix-prod-dataengineer-workreduce/dist --recursive --endpoint-url http://minio.mmix.io:9000 --profile minio
 ```
 
 ## 테스트

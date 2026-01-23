@@ -12,7 +12,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import lit, col, to_date, to_timestamp
 from pyspark.sql.types import StructType, StructField, StringType
 
-from mmix.common.utils import data_quality_logs, generate_user_session_logs
+from mmix.common.utils import validation_results_store, generate_user_session_logs
 
 
 def decode_secret(b64_json: str) -> Dict:
@@ -135,4 +135,4 @@ if __name__ == "__main__":
             .withColumn("run_id", lit(_args.run_id)) \
             .withColumn("logical_datetime", to_timestamp(lit(_logical_datetime), "yyyy-MM-dd HH:mm:ss"))
         analyzer_context.show()
-        data_quality_logs(analyzer_context, _secret, _environment)
+        validation_results_store(analyzer_context, _secret, _environment)

@@ -11,7 +11,7 @@ from pydeequ.analyzers import AnalyzerContext, AnalysisRunner, Size, Uniqueness,
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import lit, to_timestamp
 
-from mmix.common.utils import data_quality_logs
+from mmix.common.utils import validation_results_store
 
 _default_mysql_driver = "com.mysql.jdbc.Driver"
 
@@ -32,7 +32,7 @@ def decode_secret(b64_json: str) -> Dict:
 
 
 def build_mysql_jdbc(secret: Dict) -> Tuple[str, Dict]:
-    jdbc_url_ = f"jdbc:mysql://{secret['host']}:{secret['port']}/{secret['database']}?useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=utf8"
+    jdbc_url_ = f"jdbc:mysql://{secret['host']}:{secret['port']}/{secret['database']}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true"
     jdbc_props_ = {"user": secret["user"], "password": secret["password"], "driver": secret.get("driver", _default_mysql_driver), "fetchsize": "1000"}
     return jdbc_url_, jdbc_props_
 
@@ -104,6 +104,7 @@ if __name__ == "__main__":
     with SparkSession.builder.appName("dataplatform_dashboard_international_risk_daily").getOrCreate() as _spark:
         logger.info("Spark session started.")
         logger.info("Dag ID: %s, Run ID: %s, Logical Datetime: %s, Environment: %s", _dag_id, _run_id, _logical_datetime, _environment)
+        logger.info("Postgresql Observability Secret: %s", _postgresql_observability_secret)
         jdbc_url, jdbc_props = build_mysql_jdbc(_mysql_mmix_secret)
         lower_bound, upper_bound = fetch_id_bounds(_spark, jdbc_url, jdbc_props, table="news_articles", id_col="id")
 
@@ -122,4 +123,4 @@ if __name__ == "__main__":
                 .withColumn("run_id", lit(_run_id)) \
                 .withColumn("logical_datetime", to_timestamp(lit(_logical_datetime), "yyyy-MM-dd HH:mm:ss"))
             metrics_dataframe.show(truncate=False)
-            data_quality_logs(metrics_dataframe, _postgresql_observability_secret, _environment)
+            validation_results_store(metrics_dataframe, _postgresql_observability_secret, _environment)
