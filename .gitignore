@@ -1,3 +1,4 @@
 .idea
 /notebooks/**/.ipynb_checkpoints
-/src:q!/enjoy_workreduce.egg-info
+/dist
+/src/enjoy_workreduce.egg-info
